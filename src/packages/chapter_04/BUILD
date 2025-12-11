@@ -10,14 +10,17 @@ Goals:
 package(default_visibility = ["//visibility:public"])
 
 # Directory skeleton for $LFS. The output is a directory artifact shaped like
-# the eventual sysroot root (tools/, sources/, build/, etc).
+# the eventual sysroot root (tools/, sources/, build/, plus standard LFS dirs).
 genrule(
     name = "lfs_root_skeleton",
     outs = ["lfs_root_layout.tar"],
     cmd = """
         TMPDIR="$(@D)/lfs_root_layout"
         rm -rf "$$TMPDIR"
-        mkdir -p "$$TMPDIR"/{tools,build,sources,usr,var,tmp,dev,proc,run,sys}
+        mkdir -p "$$TMPDIR"/{tools,build,sources}
+        mkdir -p "$$TMPDIR"/{bin,boot,dev,home,lib,lib64,mnt,opt,proc,root,run,sbin,srv,sys,tmp,var}
+        mkdir -p "$$TMPDIR"/usr/{bin,lib,sbin}
+        mkdir -p "$$TMPDIR"/usr/local/{bin,lib,sbin}
         touch "$$TMPDIR"/.lfs_root_marker
         tar -cf "$@" -C "$(@D)" lfs_root_layout
     """,

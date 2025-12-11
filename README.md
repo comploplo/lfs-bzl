@@ -14,24 +14,75 @@ Hybrid build system that drives the Linux From Scratch (LFS) book with Bazel. Ba
 - Offline builds beyond declared archive fetches.
 - Validate host prerequisites: `bazel test //packages/chapter_02:version_check_test` (runs the Chapter 2 version checks).
 
-## Quickstart
+## 🚀 Quickstart
 
 ```bash
 cd src
-bazel test  //packages/chapter_02:version_check_test   # host sanity check
+
+# 1️⃣ Verify your host toolchain meets LFS requirements
+bazel test //packages/chapter_02:version_check_test
+
+# 2️⃣ Build the cross-toolchain (Chapter 5)
 bazel build //packages/chapter_05:cross_toolchain
-bazel build //packages/hello_world:hello_cross
-src/bazel-bin/packages/hello_world/hello_cross
+
+# 3️⃣ Build all temporary tools (Chapter 6)
+bazel build //packages/chapter_06:all_temp_tools
+
+# 🧪 Validate the cross-toolchain:
+bazel run //packages/hello_world:hello_cross  # Uses Cross Toolchain (Ch 5) ✅
 ```
 
-Artifacts land in `src/sysroot/` (e.g., `src/sysroot/tools/bin`, `src/sysroot/usr`). The `hello_cross` binary is a simple smoke check using the cross toolchain.
+**Artifacts Location:** `src/sysroot/`
 
-## Toolchains & Cross-Compiling
+- Chapter 5 cross-toolchain: `src/sysroot/tools/bin/`
+- Chapter 6 temporary tools: `src/sysroot/usr/bin/`, `src/sysroot/usr/lib/`
 
-- Chapter 5 targets (`//packages/chapter_05`) build the cross toolchain into the `src/sysroot/tools` prefix; this toolchain is used for all subsequent target builds.
-- Chapter 6 targets (`//packages/chapter_06`) consume that cross toolchain to build the temporary system under `src/sysroot/usr`.
-- Bazel runs unsandboxed for these targets so toolchain binaries can write directly into the sysroot.
-- Example: `hello_cross` links against the `tools` prefix to validate the cross compiler and headers.
+## 🔧 Toolchain Hierarchy (The Three-Stage Bootstrap)
+
+This project builds **three distinct toolchains** in sequence, each more capable than the last:
+
+### 1️⃣ Host Toolchain (Your System)
+
+- **Location:** Your native system (`/usr/bin/gcc`, etc.)
+- **Purpose:** Bootstrap the cross-toolchain (Chapter 5)
+- **Verified by:** `bazel test //packages/chapter_02:version_check_test`
+
+### 2️⃣ Cross Toolchain (Chapter 5) 🎯
+
+- **Bazel Target:** `//packages/chapter_05:cross_toolchain`
+- **Location:** `$LFS/tools/bin` (e.g., `x86_64-lfs-linux-gnu-gcc`)
+- **Purpose:** Build temporary tools (Chapter 6) that run on host but target LFS
+- **Key Components:**
+  - Binutils Pass 1 (assembler, linker)
+  - GCC Pass 1 (C/C++ compiler, no full libc yet)
+  - Linux API headers
+  - Glibc (minimal C library)
+  - Libstdc++ (C++ standard library)
+- **Validation:** `bazel run //packages/hello_world:hello_cross`
+
+### 3️⃣ Temporary Tools Toolchain (Chapter 6) 🚀
+
+- **Bazel Target:** `//packages/chapter_06:temp_tools_toolchain`
+- **Location:** `$LFS/usr/bin` (rebuilt `x86_64-lfs-linux-gnu-gcc`)
+- **Purpose:** Full-featured temporary toolchain with POSIX threads, ready for chroot
+- **Key Components:**
+  - Binutils Pass 2 (rebuilt with complete utilities)
+  - GCC Pass 2 (full compiler with threading support)
+  - 15 core utilities (bash, coreutils, make, etc.)
+- **IMPORTANT:** 🔒 This toolchain is cross-compiled to run **ON the LFS target**, not the host!
+  - Cannot run directly on host system (binaries are linked against LFS glibc)
+  - Requires chroot environment to execute
+  - Validation happens in Chapter 7 when building inside chroot
+
+### 🎯 How They Work Together
+
+```
+Host GCC → builds → Cross Toolchain (Ch 5)
+                        ↓
+          Cross Toolchain → builds → Temp Tools (Ch 6)
+                                          ↓
+                      Temp Tools → builds → Final System (Ch 7+)
+```
 
 ## Development Notes
 

@@ -74,31 +74,32 @@
 **Rule:** Use `lfs_build` (Host Bridge); builds run unsandboxed into `src/sysroot/`.
 **Verification:** Cross-toolchain validated by building `//packages/hello_world:hello_cross`.
 
-## Phase 5: Temporary Tools (Chapter 6)
+## Phase 5: Temporary Tools (Chapter 6) ✅ COMPLETE
 
 **Goal:** Build additional temporary tools using cross-toolchain
 
-| Package         | Status      | Notes                        |
-| --------------- | ----------- | ---------------------------- |
-| M4              | Not Started | Uses cross-toolchain         |
-| Ncurses         | Not Started |                              |
-| Bash            | Not Started |                              |
-| Coreutils       | Not Started |                              |
-| Diffutils       | Not Started |                              |
-| File            | Not Started |                              |
-| Findutils       | Not Started |                              |
-| Gawk            | Not Started |                              |
-| Grep            | Not Started |                              |
-| Gzip            | Not Started |                              |
-| Make            | Not Started |                              |
-| Patch           | Not Started |                              |
-| Sed             | Not Started |                              |
-| Tar             | Not Started |                              |
-| Xz              | Not Started |                              |
-| Binutils Pass 2 | Not Started | Rebuilds in temp environment |
-| GCC Pass 2      | Not Started | Full compiler with libstdc++ |
+| Package         | Status      | Notes                                      |
+| --------------- | ----------- | ------------------------------------------ |
+| M4              | ✓ Completed | 🔧 Macro processor                         |
+| Ncurses         | ✓ Completed | 📺 Terminal handling (builds host tic too) |
+| Bash            | ✓ Completed | 🐚 Shell (depends on ncurses)              |
+| Coreutils       | ✓ Completed | 📦 Core utilities (chroot to /usr/sbin)    |
+| Diffutils       | ✓ Completed | 🔍 File comparison                         |
+| File            | ✓ Completed | 🔎 Type detection (host build required)    |
+| Findutils       | ✓ Completed | 🔍 File search utilities                   |
+| Gawk            | ✓ Completed | 📝 Text processing                         |
+| Grep            | ✓ Completed | 🔎 Pattern matching                        |
+| Gzip            | ✓ Completed | 🗜️ Compression                             |
+| Make            | ✓ Completed | 🏗️ Build automation                        |
+| Patch           | ✓ Completed | 🩹 Patch utility                           |
+| Sed             | ✓ Completed | ✏️ Stream editor                           |
+| Tar             | ✓ Completed | 📦 Archive utility                         |
+| Xz              | ✓ Completed | 🗜️ Compression                             |
+| Binutils Pass 2 | ✓ Completed | 🔨 Toolchain rebuild (stable environment)  |
+| GCC Pass 2      | ✓ Completed | 🎯 Full compiler with POSIX threads        |
 
-**Rule:** Use `lfs_build`/`lfs_c_binary` with `toolchain = "//packages/chapter_05:cross_toolchain"`
+**Rule:** Use `lfs_package`/`lfs_configure_make` with `toolchain = "//packages/chapter_05:cross_toolchain"`
+**Toolchain Provider:** `//packages/chapter_06:temp_tools_toolchain` ✓ Created (uses GCC Pass 2 @ `$LFS/usr/bin`)
 
 ## Phase 6: Entering Chroot (Chapter 7)
 
@@ -133,7 +134,8 @@ Build logs will be stored in `tracker/logs/` with format: `{package_name}_{times
 
 ## Next Steps
 
-1. Exercise Chapter 4 scaffolds (root tar + env exports) in downstream builds
-1. Start Chapter 6 temporary tools with `cross_toolchain` (per LFS ordering)
-1. Implement lfs_chroot.bzl for Chapter 7+ once Chapter 6 is stable
-1. Keep running the host prereq test (`//packages/chapter_02:version_check_test`) after host toolchain changes
+1. ✅ ~~Exercise Chapter 4 scaffolds (root tar + env exports) in downstream builds~~
+1. ✅ ~~Start Chapter 6 temporary tools with `cross_toolchain` (per LFS ordering)~~
+1. 🎯 Implement lfs_chroot.bzl for Chapter 7+ now that Chapter 6 is complete
+1. 🚀 Begin Chapter 7: Entering Chroot and building final system tools
+1. 🔍 Keep running the host prereq test (`//packages/chapter_02:version_check_test`) after host toolchain changes
