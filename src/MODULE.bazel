@@ -5,6 +5,8 @@ http_file = use_repo_rule(
     "http_file",
 )
 
+bazel_dep(name = "rules_shell", version = "0.2.0")
+
 # Chapter 3 source definitions (LFS 12.x System V)
 http_file(
     name = "binutils_src",

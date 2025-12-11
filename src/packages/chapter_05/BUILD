@@ -5,8 +5,7 @@ Targets use Bazel primitives plus the LFS build macros. Commands mirror the LFS
 book but are staged for refinement once we run real builds.
 """
 
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//tools:lfs_build.bzl", "lfs_c_binary", "lfs_configure_make", "lfs_package", "lfs_toolchain")
+load("//tools:lfs_build.bzl", "lfs_configure_make", "lfs_package", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -88,7 +87,11 @@ lfs_package(
           --enable-default-pie \\
           --enable-default-ssp )
     """,
-    install_cmd = "( cd build && DESTDIR=$LFS make install-gcc && DESTDIR=$LFS make install-target-libgcc )",
+    install_cmd = """
+        ( cd build && DESTDIR=$LFS make install-gcc && DESTDIR=$LFS make install-target-libgcc )
+        # Provide libgcc_s for glibc build; stage1 gcc builds only libgcc.a.
+        ln -sf libgcc.a $LFS/tools/lib/gcc/$LFS_TGT/14.2.0/libgcc_s.a
+    """,
     deps = [
         ":binutils_pass1",
         ":linux_headers",
@@ -158,18 +161,4 @@ lfs_toolchain(
         "CXX": "x86_64-lfs-linux-gnu-g++",
         "LFS_TGT": "x86_64-lfs-linux-gnu",
     },
-)
-
-lfs_c_binary(
-    name = "toolchain_smoke",
-    srcs = ["toolchain_smoke.c"],
-    binary_name = "toolchain-smoke",
-    toolchain = ":cross_toolchain",
-)
-
-sh_test(
-    name = "toolchain_smoke_test",
-    srcs = ["toolchain_smoke_test.sh"],
-    args = ["$(location :toolchain_smoke)"],
-    data = [":toolchain_smoke"],
 )

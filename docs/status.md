@@ -6,16 +6,17 @@
 
 ## Phase 1: Infrastructure ✅ COMPLETE
 
-| Task              | Status      | Notes                                 |
-| ----------------- | ----------- | ------------------------------------- |
-| Clone LFS Book    | ✓ Done      | r12.2 tag checked out                 |
-| Tracker Setup     | ✓ Done      | prompts/, logs/, status.md            |
-| Sysroot Structure | ✓ Done      | tools/, sources/, build/ created      |
-| Starlark Rules    | ✓ Done      | lfs_package + lfs_autotools_package   |
-| WORKSPACE Base    | ✓ Done      | Basic setup complete                  |
-| Hello World Test  | ✓ Done      | Builds, installs to sysroot/tools/bin |
-| Bazel Run Support | ✓ Done      | `bazel run` executes from sysroot     |
-| Chroot Rule       | Not Started | Defer until Chapter 6 artifacts exist |
+| Task              | Status      | Notes                                                 |
+| ----------------- | ----------- | ----------------------------------------------------- |
+| Clone LFS Book    | ✓ Done      | r12.2 tag checked out                                 |
+| Tracker Setup     | ✓ Done      | prompts/, logs/, status.md                            |
+| Sysroot Structure | ✓ Done      | tools/, sources/, build/ created                      |
+| Starlark Rules    | ✓ Done      | lfs_package + lfs_autotools_package                   |
+| WORKSPACE Base    | ✓ Done      | Basic setup complete                                  |
+| Hello World Test  | ✓ Done      | Builds, installs to sysroot/tools/bin                 |
+| Bazel Run Support | ✓ Done      | `bazel run` executes from sysroot                     |
+| Host Prereq Check | ✓ Done      | `bazel test //packages/chapter_02:version_check_test` |
+| Chroot Rule       | Not Started | Defer until Chapter 6 artifacts exist                 |
 
 ## Phase 2: Package Definitions (Chapter 3)
 
@@ -64,14 +65,14 @@
 | Package                    | Status      | Dependencies                   | Notes                                              |
 | -------------------------- | ----------- | ------------------------------ | -------------------------------------------------- |
 | Binutils Pass 1            | ✓ Completed | -                              | Installed to `$LFS/tools`                          |
-| GCC Pass 1                 | ✓ Completed | Binutils Pass 1, Linux Headers | Bundled gmp/mpfr/mpc                               |
+| GCC Pass 1                 | ✓ Completed | Binutils Pass 1, Linux Headers | Bundled gmp/mpfr/mpc; provides libgcc_s.a symlink  |
 | Linux Headers              | ✓ Completed | -                              | Headers installed to `$LFS/usr/include`            |
 | Glibc                      | ✓ Completed | GCC Pass 1, Linux Headers      | Out-of-tree build; landing in `$LFS/usr`           |
 | Libstdc++                  | ✓ Completed | Glibc                          | Built from GCC tree; installed to `$LFS/usr/lib64` |
-| **LFS Toolchain Provider** | ✓ Completed | All above                      | `cross_toolchain` with smoke test target           |
+| **LFS Toolchain Provider** | ✓ Completed | All above                      | `cross_toolchain` provider used by later chapters  |
 
 **Rule:** Use `lfs_build` (Host Bridge); builds run unsandboxed into `src/sysroot/`.
-**Verification:** Cross-toolchain proven via `toolchain_smoke_test`; hello world also built with toolchain (`//packages/hello_world:hello_cross`).
+**Verification:** Cross-toolchain validated by building `//packages/hello_world:hello_cross`.
 
 ## Phase 5: Temporary Tools (Chapter 6)
 
@@ -132,8 +133,7 @@ Build logs will be stored in `tracker/logs/` with format: `{package_name}_{times
 
 ## Next Steps
 
-1. ~~Complete Phase 1 infrastructure setup~~ ✓ Done
-1. Run Hello World verification test ✓ Done (tools + cross variants)
 1. Exercise Chapter 4 scaffolds (root tar + env exports) in downstream builds
 1. Start Chapter 6 temporary tools with `cross_toolchain` (per LFS ordering)
 1. Implement lfs_chroot.bzl for Chapter 7+ once Chapter 6 is stable
+1. Keep running the host prereq test (`//packages/chapter_02:version_check_test`) after host toolchain changes

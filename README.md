@@ -6,31 +6,25 @@ Hybrid build system that drives the Linux From Scratch (LFS) book with Bazel. Ba
 
 - `src/` — Bazel workspace, Starlark rules, BUILD files, sysroot under `src/sysroot/`.
 - `docs/` — LFS book sources (DocBook).
-- `tracker/` — status/log notes.
-- `tools/` — Starlark rules (`lfs_build.bzl`, providers).
 
 ## Requirements
 
 - Bazel with bzlmod enabled (repo cache defaults to `~/.cache/bazel/_bazel_repo_cache`).
 - Host toolchain matching LFS Chapter 2 (gcc, g++, make, etc.).
 - Offline builds beyond declared archive fetches.
+- Validate host prerequisites: `bazel test //packages/chapter_02:version_check_test` (runs the Chapter 2 version checks).
 
 ## Quickstart
 
 ```bash
 cd src
+bazel test  //packages/chapter_02:version_check_test   # host sanity check
 bazel build //packages/chapter_05:cross_toolchain
-bazel test  //packages/chapter_05:toolchain_smoke_test
-```
-
-Artifacts land in `src/sysroot/` (e.g., `src/sysroot/tools/bin`, `src/sysroot/usr`).
-
-Hello world with the cross toolchain:
-
-```bash
 bazel build //packages/hello_world:hello_cross
 src/bazel-bin/packages/hello_world/hello_cross
 ```
+
+Artifacts land in `src/sysroot/` (e.g., `src/sysroot/tools/bin`, `src/sysroot/usr`). The `hello_cross` binary is a simple smoke check using the cross toolchain.
 
 ## Toolchains & Cross-Compiling
 
