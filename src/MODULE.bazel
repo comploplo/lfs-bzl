@@ -1,0 +1,152 @@
+module(name = "lfs_bootstrap")
+
+http_file = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:http.bzl",
+    "http_file",
+)
+
+# Chapter 3 source definitions (LFS 12.x System V)
+http_file(
+    name = "binutils_src",
+    sha256 = "13f74202a3c4c51118b797a39ea4200d3f6cfbe224da6d1d95bb938480132dfd",
+    urls = ["https://ftpmirror.gnu.org/binutils/binutils-2.43.1.tar.xz"],
+)
+
+http_file(
+    name = "gcc_src",
+    sha256 = "a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9",
+    urls = ["https://ftpmirror.gnu.org/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz"],
+)
+
+http_file(
+    name = "gmp_src",
+    sha256 = "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
+    urls = ["https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.xz"],
+)
+
+http_file(
+    name = "mpfr_src",
+    sha256 = "277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2",
+    urls = ["https://ftpmirror.gnu.org/mpfr/mpfr-4.2.1.tar.xz"],
+)
+
+http_file(
+    name = "mpc_src",
+    sha256 = "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8",
+    urls = ["https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz"],
+)
+
+http_file(
+    name = "linux_headers_src",
+    sha256 = "30909eb2e0434dce97a93cd97ed0dfab7688a124bc3ebc3ecf6c776de09ccc0b",
+    urls = ["https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.10.5.tar.xz"],
+)
+
+http_file(
+    name = "glibc_src",
+    sha256 = "19a890175e9263d748f627993de6f4b1af9cd21e03f080e4bfb3a1fac10205a2",
+    urls = ["https://ftpmirror.gnu.org/glibc/glibc-2.40.tar.xz"],
+)
+
+http_file(
+    name = "libstdcpp_src",
+    sha256 = "a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9",
+    urls = ["https://ftpmirror.gnu.org/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz"],
+)
+
+# Early Chapter 6 tools used in Chapter 5/6 bootstrap (downloaded here for convenience)
+http_file(
+    name = "m4_src",
+    sha256 = "63aede5c6d33b6d9b13511cd0be2cac046f2e70fd0a07aa9573a04a82783af96",
+    urls = ["https://ftpmirror.gnu.org/m4/m4-1.4.19.tar.xz"],
+)
+
+http_file(
+    name = "ncurses_src",
+    sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6",
+    urls = ["https://ftpmirror.gnu.org/ncurses/ncurses-6.5.tar.gz"],
+)
+
+http_file(
+    name = "bash_src",
+    sha256 = "d3ef80d2b67d8cbbe4d3265c63a72c46f9b278ead6e0e06d61801b58f23f50b5",
+    urls = ["https://ftpmirror.gnu.org/bash/bash-5.2.32.tar.gz"],
+)
+
+http_file(
+    name = "coreutils_src",
+    sha256 = "cd328edeac92f6a665de9f323c93b712af1858bc2e0d88f3f7100469470a1b8a",
+    urls = ["https://ftpmirror.gnu.org/coreutils/coreutils-9.5.tar.xz"],
+)
+
+http_file(
+    name = "diffutils_src",
+    sha256 = "90e5e93cc724e4ebe12ede80df1634063c7a855692685919bfe60b556c9bd09e",
+    urls = ["https://ftpmirror.gnu.org/diffutils/diffutils-3.10.tar.xz"],
+)
+
+http_file(
+    name = "file_src",
+    sha256 = "fc97f51029bb0e2c9f4e3bffefdaf678f0e039ee872b9de5c002a6d09c784d82",
+    urls = ["https://astron.com/pub/file/file-5.45.tar.gz"],
+)
+
+http_file(
+    name = "findutils_src",
+    sha256 = "1387e0b67ff247d2abde998f90dfbf70c1491391a59ddfecb8ae698789f0a4f5",
+    urls = ["https://ftpmirror.gnu.org/findutils/findutils-4.10.0.tar.xz"],
+)
+
+http_file(
+    name = "gawk_src",
+    sha256 = "ca9c16d3d11d0ff8c69d79dc0b47267e1329a69b39b799895604ed447d3ca90b",
+    urls = ["https://ftpmirror.gnu.org/gawk/gawk-5.3.0.tar.xz"],
+)
+
+http_file(
+    name = "grep_src",
+    sha256 = "1db2aedde89d0dea42b16d9528f894c8d15dae4e190b59aecc78f5a951276eab",
+    urls = ["https://ftpmirror.gnu.org/grep/grep-3.11.tar.xz"],
+)
+
+http_file(
+    name = "gzip_src",
+    sha256 = "7454eb6935db17c6655576c2e1b0fabefd38b4d0936e0f87f48cd062ce91a057",
+    urls = ["https://ftpmirror.gnu.org/gzip/gzip-1.13.tar.xz"],
+)
+
+http_file(
+    name = "make_src",
+    sha256 = "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
+    urls = ["https://ftpmirror.gnu.org/make/make-4.4.1.tar.gz"],
+)
+
+http_file(
+    name = "patch_src",
+    sha256 = "ac610bda97abe0d9f6b7c963255a11dcb196c25e337c61f94e4778d632f1d8fd",
+    urls = ["https://ftpmirror.gnu.org/patch/patch-2.7.6.tar.xz"],
+)
+
+http_file(
+    name = "sed_src",
+    sha256 = "6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181",
+    urls = ["https://ftpmirror.gnu.org/sed/sed-4.9.tar.xz"],
+)
+
+http_file(
+    name = "tar_src",
+    sha256 = "4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16",
+    urls = ["https://ftpmirror.gnu.org/tar/tar-1.35.tar.xz"],
+)
+
+http_file(
+    name = "xz_src",
+    sha256 = "a9db3bb3d64e248a0fae963f8fb6ba851a26ba1822e504dc0efd18a80c626caf",
+    urls = ["https://tukaani.org/xz/xz-5.6.2.tar.xz"],
+)
+
+http_file(
+    name = "readline_src",
+    sha256 = "0e5be4d2937e8bd9b7cd60d46721ce79f88a33415dd68c2d738fb5924638f656",
+    urls = ["https://ftpmirror.gnu.org/readline/readline-8.2.13.tar.gz"],
+)

@@ -1,0 +1,22 @@
+repos:
+  # Basic hygiene.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+
+  # Bazel formatting (BUILD, .bzl, WORKSPACE, MODULE.bazel).
+  # Using upstream buildtools release with bundled hook manifest.
+  -   repo: https://github.com/keith/pre-commit-buildifier
+      rev: 8.2.1
+      hooks:
+        -   id: buildifier
+        -   id: buildifier-lint
+  # Markdown formatting using mdformat (GFM).
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.17
+    hooks:
+      - id: mdformat
+        additional_dependencies: ["mdformat-gfm"]
+        files: "\\.md$"

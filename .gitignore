@@ -1,0 +1,14 @@
+# Bazel outputs
+bazel-*
+/src/bazel-*
+
+# Build sysroot and logs
+/src/sysroot/
+tracker/logs/
+
+# Python cache
+**/__pycache__/
+*.pyc
+
+# Editor/OS noise
+.DS_Store

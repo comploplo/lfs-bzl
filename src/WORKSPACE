@@ -1,0 +1,3 @@
+workspace(name = "lfs_bootstrap")
+
+# Bzlmod is enabled. External sources are defined in MODULE.bazel.

@@ -1,0 +1,8 @@
+# UI: keep large logs and readable output
+common --experimental_ui_max_stdouterr_bytes=104857600
+common --color=yes
+common --curses=yes
+common --announce_rc
+
+# Caching: reuse external downloads across builds
+build --repository_cache=~/.cache/bazel/_bazel_repo_cache

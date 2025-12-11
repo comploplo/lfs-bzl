@@ -1,0 +1,3 @@
+[submodule "docs/lfs-book"]
+	path = docs/lfs-book
+	url = https://git.linuxfromscratch.org/lfs.git
