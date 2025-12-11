@@ -1,14 +1,18 @@
-# Bazel outputs
+# Bazel outputs (symlinks in workspace root)
 bazel-*
 /src/bazel-*
 
-# Build sysroot and logs
-/src/sysroot/
+# Build sysroot and logs (generated)
+src/sysroot/
 tracker/logs/
 
 # Python cache
 **/__pycache__/
-*.pyc
+*.py[co]
 
-# Editor/OS noise
+# Editor / OS noise
 .DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
