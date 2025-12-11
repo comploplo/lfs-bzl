@@ -4,7 +4,6 @@ bazel-*
 
 # Build sysroot and logs (generated)
 src/sysroot/
-tracker/logs/
 
 # Python cache
 **/__pycache__/
