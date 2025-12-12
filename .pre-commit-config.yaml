@@ -20,3 +20,18 @@ repos:
       - id: mdformat
         additional_dependencies: ["mdformat-gfm"]
         files: "\\.md$"
+
+  # Shell script linting with shellcheck
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ["-x"]  # Allow following source directives
+
+  # C/C++ formatting with clang-format
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.5
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+        args: ["-i"]  # In-place formatting

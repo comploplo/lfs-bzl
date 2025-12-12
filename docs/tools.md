@@ -1,23 +1,39 @@
-# LFS Bazel Build Tools Documentation
+# 🔧 LFS Bazel Build Tools Documentation
 
 **Location:** `src/tools/`
 **Purpose:** Custom Starlark rules and providers for building LFS packages with Bazel
 
 This directory implements the "bridge" between Bazel's dependency management and LFS's traditional shell-based build system.
 
+## 📑 Quick Navigation
+
+- [Philosophy](#philosophy-managed-chaos)
+- [Providers](#1-providers-providersbzl)
+- [Build Rules](#2-build-rules-lfs_buildbzl)
+  - [lfs_package](#lfs_package-rule)
+  - [lfs_autotools_package](#lfs_autotools_package-macro)
+  - [lfs_c_binary](#lfs_c_binary-macro)
+  - [lfs_configure_make](#lfs_configure_make-macro)
+  - [lfs_autotools / lfs_plain_make](#lfs_autotools--lfs_plain_make-macros)
+- [Chroot Rules](#lfs_chroot_command-rule)
+- [Environment Variables](#environment-variables-reference)
+- [Examples](#file-layout-in-build-files)
+- [Debugging](#debugging)
+
 ______________________________________________________________________
 
-## Files Overview
+## 📁 Files Overview
 
-| File            | Purpose                                                   |
-| --------------- | --------------------------------------------------------- |
-| `BUILD`         | Package marker (allows other packages to load .bzl files) |
-| `providers.bzl` | Custom provider for toolchain information                 |
-| `lfs_build.bzl` | Host-side build rules, autotools helper, toolchain rule   |
+| File               | Purpose                                                   |
+| ------------------ | --------------------------------------------------------- |
+| `BUILD`            | Package marker (allows other packages to load .bzl files) |
+| `providers.bzl`    | Custom provider for toolchain information                 |
+| `lfs_build.bzl`    | Host-side build rules, autotools helper, toolchain rule   |
+| `lfs_defaults.bzl` | Phase presets for configure/make/install defaults         |
 
 ______________________________________________________________________
 
-## Philosophy: "Managed Chaos"
+## 🎭 Philosophy: "Managed Chaos"
 
 These rules implement our hybrid approach:
 
@@ -28,7 +44,7 @@ These rules implement our hybrid approach:
 
 ______________________________________________________________________
 
-## 1. Providers (`providers.bzl`)
+## 1. 📦 Providers (`providers.bzl`)
 
 ### `LfsToolchainInfo`
 
@@ -76,7 +92,7 @@ toolchain configuration.
 
 ______________________________________________________________________
 
-## 2. Build Rules (`lfs_build.bzl`)
+## 2. 🏗️ Build Rules (`lfs_build.bzl`)
 
 ### `lfs_package` (Rule)
 
@@ -289,7 +305,65 @@ Builds in `<build_subdir>` (default `build`) with parallel make and optional `DE
 
 ______________________________________________________________________
 
-## Environment Variables Reference
+### `lfs_autotools` / `lfs_plain_make` (Macros)
+
+Declarative wrappers that use phase presets from `lfs_defaults.bzl` to avoid
+long heredocs. Choose a phase (`"ch5"`, `"ch6"`, `"ch7"`) and provide only the
+deltas (configure flags, make targets, install targets).
+
+- `lfs_autotools`: generates configure/build/install commands with out-of-tree builds.
+- `lfs_plain_make`: for packages that only need make + install.
+
+Each phase preset sets sensible defaults: prefix, destdir, build subdir, and
+`-j$(nproc)` make flags.
+
+Example:
+
+```python
+load("//tools:lfs_build.bzl", "lfs_autotools")
+
+lfs_autotools(
+    name = "binutils_pass1",
+    srcs = ["@binutils_src//file"],
+    phase = "ch5",
+    configure_flags = [
+        "--with-sysroot=$LFS",
+        "--target=$LFS_TGT",
+        "--disable-nls",
+        "--enable-gprofng=no",
+        "--disable-werror",
+    ],
+)
+```
+
+______________________________________________________________________
+
+### `lfs_chroot_command` (Rule)
+
+Runs a command inside the LFS sysroot via the chroot helper. Handles mount/unmount
+of virtual filesystems and sets a sane environment inside chroot.
+
+- Default env: `HOME=/root`, `LC_ALL=C`, `PATH=/usr/bin:/usr/sbin:/bin:/sbin`, `TERM=${TERM:-linux}`, `LFS=/`
+- Optional `env` attribute to add/override exports.
+- Optional `toolchain` (`LfsToolchainInfo`) to prepend `bin_path` and export its `env` (useful for temp_tools_toolchain).
+- Requires sudo for the helper; keep targets tagged `manual`/`requires-sudo`.
+
+### `lfs_chroot_step` (Macro)
+
+Thin wrapper around `lfs_chroot_command` that supplies defaults for `lfs_sysroot`,
+`chroot_helper`, and tags (`manual`, `requires-sudo`). Pass `toolchain` and `env`
+as needed; use for most Chapter 7+ steps to avoid repetition.
+
+### `lfs_chroot_extract_tarball` (Macro)
+
+Extracts a tarball inside chroot (e.g., under `/sources`) and produces a marker
+for dependency ordering. Assumes the extraction dir is derived from the tarball
+basename (strips `.tar.*`). Use this to separate unpack from configure/build
+steps while keeping chroot operations declarative.
+
+______________________________________________________________________
+
+## 🔐 Environment Variables Reference
 
 The rules automatically set these environment variables:
 
@@ -309,7 +383,7 @@ The rules automatically set these environment variables:
 
 ______________________________________________________________________
 
-## Dependency Tracking
+## 🔗 Dependency Tracking
 
 **Marker Files:**
 
@@ -341,7 +415,7 @@ Bazel ensures `binutils_pass1` completes before `gcc_pass1` starts.
 
 ______________________________________________________________________
 
-## File Layout in BUILD Files
+## 📄 File Layout in BUILD Files
 
 Recommended structure for package BUILD files:
 
@@ -384,7 +458,7 @@ lfs_c_binary(
 
 ______________________________________________________________________
 
-## Limitations & Future Work
+## 🚧 Limitations & Future Work
 
 ### Current Limitations
 
@@ -397,17 +471,21 @@ ______________________________________________________________________
 
    - **Impact:** Libraries and headers should leave `create_runner` unset
 
+1. **Logs in Execroot:** Build logs are written to `bazel-out/lfs-logs/` inside the Bazel execroot, not the workspace.
+
+   - **Impact:** Logs are transient unless copied out.
+   - **Mitigation:** Mirror or rsync execroot logs into a workspace directory if you want them versioned.
+
 ### Future Enhancements
 
 - [ ] Add `lfs_chroot` rule for Chapter 7+ builds
-- [ ] Add patch support via `patches` attribute
-- [ ] Support multi-file sources
+- [ ] Mirror build logs into workspace (currently in execroot `bazel-out/lfs-logs/`)
 - [ ] Better output capturing and logging
 - [ ] Support for `$LFS/usr/bin` binaries (not just `/tools/bin`)
 
 ______________________________________________________________________
 
-## Testing
+## 🧪 Testing
 
 Verify the rules work with the hello world test:
 
@@ -432,7 +510,7 @@ Build system is working correctly.
 
 ______________________________________________________________________
 
-## Debugging
+## 🐛 Debugging
 
 ### View Generated Build Script
 
@@ -457,8 +535,9 @@ ls -l bazel-bin/packages/hello_world/hello.done
 
 ______________________________________________________________________
 
-## References
+## 📖 Appendix: Related Documentation
 
-- **LFS Book:** `docs/lfs-book/` - Official build instructions
-- **Design Doc:** `DESIGN.md` - Architecture rationale
-- **Status Tracker:** `tracker/status.md` - Current progress
+- **[DESIGN.md](../DESIGN.md)** - Architecture and "Managed Chaos" philosophy
+- **[docs/status.md](status.md)** - Build progress tracker
+- **[LFS Book 12.2](https://www.linuxfromscratch.org/lfs/view/12.2/)** - Official build instructions
+- **[Bazel Rules Tutorial](https://bazel.build/rules/rules-tutorial)** - Creating custom rules

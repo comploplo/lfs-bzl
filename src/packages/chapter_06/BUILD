@@ -11,7 +11,7 @@ This chapter builds 17 packages in dependency order:
 - Tier 4: Toolchain rebuild (Binutils Pass 2, GCC Pass 2)
 """
 
-load("//tools:lfs_build.bzl", "lfs_configure_make", "lfs_package", "lfs_toolchain")
+load("//tools:lfs_build.bzl", "lfs_autotools", "lfs_configure_make", "lfs_package", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -27,6 +27,7 @@ lfs_configure_make(
         "--host=$LFS_TGT",
         "--build=$(build-aux/config.guess)",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -69,25 +70,27 @@ lfs_package(
 )
 
 # Diffutils - File comparison utilities
-lfs_configure_make(
+lfs_autotools(
     name = "diffutils",
     srcs = ["@diffutils_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
         "--build=$(./build-aux/config.guess)",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
 )
 
 # Gzip - Compression utility
-lfs_configure_make(
+lfs_autotools(
     name = "gzip",
     srcs = ["@gzip_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",

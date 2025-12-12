@@ -6,7 +6,23 @@ perform the real LFS steps. Includes helpers for package builds, autotools
 shortcuts, and toolchain handoff.
 """
 
+load("//tools:lfs_defaults.bzl", "phase_defaults")
 load("//tools:providers.bzl", "LfsToolchainInfo")
+
+def _default_package_toolchain():
+    """Returns a sensible default toolchain label based on the current package path.
+
+    Allows BUILD files to omit explicit toolchain wiring when using standard
+    chapter layout.
+    """
+    pkg = native.package_name()
+    if pkg.startswith("packages/chapter_05"):
+        return "//packages/chapter_05:cross_toolchain"
+    if pkg.startswith("packages/chapter_06"):
+        return "//packages/chapter_06:temp_tools_toolchain"
+    if pkg.startswith("packages/chapter_07"):
+        return "//packages/chapter_07:chroot_base_toolchain"
+    return None
 
 def _lfs_toolchain_impl(ctx):
     """Returns an LfsToolchainInfo provider to hand to downstream packages."""
@@ -20,16 +36,6 @@ def _lfs_toolchain_impl(ctx):
 def _lfs_package_impl(ctx):
     """
     Implementation of the lfs_package rule.
-
-    Handles the standard LFS package build pattern:
-    1. Extract tarballs (all provided)
-    2. Apply patches (optional)
-    3. Inject toolchain environment
-    4. Run configure with specified flags
-    5. Run make
-    6. Run make install to sysroot
-    7. Create marker file for dependency tracking
-    8. Create runner script if executable
     """
     sysroot_path = "sysroot"
 
@@ -52,7 +58,8 @@ def _lfs_package_impl(ctx):
         "# Package: {}".format(ctx.label),
         "",
         'EXECROOT="$(pwd)"',
-        'LOG_DIR="$EXECROOT/tracker/logs"',
+        # Keep logs inside bazel-out (standard Bazel output tree)
+        'LOG_DIR="$EXECROOT/bazel-out/lfs-logs"',
         'mkdir -p "$LOG_DIR"',
         'LOG_FILE="$LOG_DIR/{}.log"'.format(ctx.label.name),
         'exec > >(tee "$LOG_FILE") 2>&1',
@@ -124,7 +131,7 @@ def _lfs_package_impl(ctx):
     if ctx.attr.configure_cmd:
         script_parts.extend([
             "# Configure",
-            'echo "Configuring {}..."'.format(ctx.label.name),
+            'echo "Configuring {}"...'.format(ctx.label.name),
             ctx.attr.configure_cmd,
             "",
         ])
@@ -132,7 +139,7 @@ def _lfs_package_impl(ctx):
     if ctx.attr.build_cmd:
         script_parts.extend([
             "# Build",
-            'echo "Building {}..."'.format(ctx.label.name),
+            'echo "Building {}"...'.format(ctx.label.name),
             ctx.attr.build_cmd,
             "",
         ])
@@ -164,48 +171,14 @@ def _lfs_package_impl(ctx):
     )
 
     if runner_name:
-        runner_script = """#!/bin/bash
-# Runner script for LFS package: {name}
-# This script executes the binary from sysroot
-
-if [ -n "$BUILD_WORKSPACE_DIRECTORY" ]; then
-    WORKSPACE_ROOT="$BUILD_WORKSPACE_DIRECTORY"
-else
-    SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd -P)"
-    CURRENT="$SCRIPT_DIR"
-    while [ "$CURRENT" != "/" ]; do
-        if [ -f "$CURRENT/WORKSPACE" ]; then
-            WORKSPACE_ROOT="$CURRENT"
-            break
-        fi
-        CURRENT="$(dirname "$CURRENT")"
-    done
-fi
-
-if [ -z "$WORKSPACE_ROOT" ]; then
-    echo "Error: Could not find workspace root" >&2
-    exit 1
-fi
-
-SYSROOT="$WORKSPACE_ROOT/sysroot"
-BINARY="$SYSROOT/tools/bin/{binary}"
-
-if [ ! -f "$BINARY" ]; then
-    echo "Error: Binary not found at $BINARY" >&2
-    echo "Run 'bazel build {label}' first" >&2
-    exit 1
-fi
-
-exec "$BINARY" "$@"
-""".format(
-            name = ctx.label.name,
-            binary = runner_name,
-            label = ctx.label,
-        )
-
-        ctx.actions.write(
+        ctx.actions.expand_template(
+            template = ctx.file._runner_template,
             output = output,
-            content = runner_script,
+            substitutions = {
+                "{name}": ctx.label.name,
+                "{binary}": runner_name,
+                "{label}": str(ctx.label),
+            },
             is_executable = True,
         )
 
@@ -274,6 +247,10 @@ lfs_package = rule(
             doc = "Set True to emit a runner script (uses label name unless binary_name is provided)",
             default = False,
         ),
+        "_runner_template": attr.label(
+            default = "//tools:lfs_runner_script_template",
+            allow_single_file = True,
+        ),
     },
     executable = True,
 )
@@ -293,42 +270,198 @@ lfs_toolchain = rule(
     },
 )
 
+def _default_phase_opts(phase, prefix, destdir, build_subdir, make_flags):
+    defaults = phase_defaults(phase)
+    return {
+        "prefix": prefix if prefix else defaults["prefix"],
+        "destdir": destdir if destdir else defaults["destdir"],
+        "build_subdir": build_subdir if build_subdir else defaults["build_subdir"],
+        "make_flags": make_flags if make_flags else defaults["make_flags"],
+    }
+
+def _render_configure(prefix, build_subdir, configure_flags, pre_cmds = []):
+    lines = []
+    if pre_cmds:
+        lines.extend(pre_cmds)
+    cmd = "( mkdir -p {bd} && cd {bd} && ../configure --prefix={prefix}".format(
+        bd = build_subdir,
+        prefix = prefix,
+    )
+    if configure_flags:
+        cmd += " " + " ".join(configure_flags)
+    cmd += " )"
+    lines.append(cmd)
+    return "\n".join(lines)
+
+def _render_make(build_subdir, make_targets, make_flags):
+    flags = make_flags if make_flags else []
+    cmd = "( cd {bd} && make".format(bd = build_subdir)
+    if flags:
+        cmd += " " + " ".join(flags)
+    if make_targets:
+        cmd += " " + " ".join(make_targets)
+    cmd += " )"
+    return cmd
+
+def _render_install(build_subdir, install_targets, destdir):
+    targets = " ".join(install_targets) if install_targets else "install"
+    dest_prefix = "DESTDIR={destdir} ".format(destdir = destdir) if destdir else ""
+    return "( cd {bd} && {dest}make {targets} )".format(
+        bd = build_subdir,
+        dest = dest_prefix,
+        targets = targets,
+    )
+
+def lfs_autotools(
+        name,
+        srcs,
+        phase = "ch6",
+        configure_flags = [],
+        make_targets = [],
+        install_targets = ["install"],
+        prefix = None,
+        destdir = None,
+        build_subdir = None,
+        make_flags = None,
+        pre_configure_cmds = [],
+        toolchain = None,
+        env = {},
+        **kwargs):
+    """Declarative autotools macro using phase presets (ch5/ch6/ch7).
+
+    Only specify deltas: extra configure flags, make targets, or install targets.
+
+    Args:
+      name: Target name
+      srcs: Source files (tarballs)
+      phase: Build phase preset ("ch5", "ch6", "ch7")
+      configure_flags: Additional flags for configure
+      make_targets: Make targets to build (default: no targets, runs default make)
+      install_targets: Install targets (default: ["install"])
+      prefix: Install prefix (overrides phase default)
+      destdir: DESTDIR for install (overrides phase default)
+      build_subdir: Build subdirectory (overrides phase default)
+      make_flags: Make flags (overrides phase default)
+      pre_configure_cmds: Commands to run before configure
+      toolchain: LfsToolchainInfo provider (default: auto-detected from package path)
+      env: Additional environment variables
+      **kwargs: Additional arguments passed to lfs_package
+    """
+    resolved_toolchain = toolchain if toolchain else _default_package_toolchain()
+    opts = _default_phase_opts(
+        phase = phase,
+        prefix = prefix,
+        destdir = destdir,
+        build_subdir = build_subdir,
+        make_flags = make_flags,
+    )
+
+    lfs_package(
+        name = name,
+        srcs = srcs,
+        configure_cmd = _render_configure(
+            prefix = opts["prefix"],
+            build_subdir = opts["build_subdir"],
+            configure_flags = configure_flags,
+            pre_cmds = pre_configure_cmds,
+        ),
+        build_cmd = _render_make(
+            build_subdir = opts["build_subdir"],
+            make_targets = make_targets,
+            make_flags = opts["make_flags"],
+        ),
+        install_cmd = _render_install(
+            build_subdir = opts["build_subdir"],
+            install_targets = install_targets,
+            destdir = opts["destdir"],
+        ),
+        toolchain = resolved_toolchain,
+        env = env,
+        **kwargs
+    )
+
+def lfs_plain_make(
+        name,
+        srcs,
+        phase = "ch6",
+        make_targets = [],
+        install_cmd = None,
+        make_flags = None,
+        build_subdir = None,
+        destdir = None,
+        toolchain = None,
+        env = {},
+        **kwargs):
+    """Macro for packages that only need make + install (no configure).
+
+    Args:
+      name: Target name
+      srcs: Source files (tarballs)
+      phase: Build phase preset ("ch5", "ch6", "ch7")
+      make_targets: Make targets to build
+      install_cmd: Custom install command (default: uses phase default)
+      make_flags: Make flags (overrides phase default)
+      build_subdir: Build subdirectory (overrides phase default)
+      destdir: DESTDIR for install (overrides phase default)
+      toolchain: LfsToolchainInfo provider (default: auto-detected)
+      env: Additional environment variables
+      **kwargs: Additional arguments passed to lfs_package
+    """
+    resolved_toolchain = toolchain if toolchain else _default_package_toolchain()
+    opts = _default_phase_opts(
+        phase = phase,
+        prefix = None,
+        destdir = destdir,
+        build_subdir = build_subdir,
+        make_flags = make_flags,
+    )
+    build_cmd = _render_make(
+        build_subdir = opts["build_subdir"],
+        make_targets = make_targets,
+        make_flags = opts["make_flags"],
+    )
+    final_install = install_cmd if install_cmd else _render_install(
+        build_subdir = opts["build_subdir"],
+        install_targets = ["install"],
+        destdir = opts["destdir"],
+    )
+
+    lfs_package(
+        name = name,
+        srcs = srcs,
+        build_cmd = build_cmd,
+        install_cmd = final_install,
+        toolchain = resolved_toolchain,
+        env = env,
+        **kwargs
+    )
+
 def lfs_autotools_package(
         name,
         srcs,
         prefix = "/tools",
         configure_flags = [],
         make_flags = [],
-        install_cmd = None,
         **kwargs):
-    """
-    Convenience macro for standard autotools packages.
+    """Convenience macro for standard autotools packages.
 
     Args:
-        name: Target name
-        srcs: Source tarball(s)
-        prefix: Install prefix (default: /tools)
-        configure_flags: Additional configure flags
-        make_flags: Additional make flags
-        install_cmd: Optional override for the install command
-        **kwargs: Additional arguments passed to lfs_package
+      name: Target name
+      srcs: Source files (tarballs)
+      prefix: Install prefix (default: /tools)
+      configure_flags: Additional flags for configure
+      make_flags: Make flags
+      **kwargs: Additional arguments passed to lfs_autotools
     """
-    configure_cmd = "./configure --prefix={}".format(prefix)
-    if configure_flags:
-        configure_cmd += " " + " ".join(configure_flags)
-
-    make_cmd = "make"
-    if make_flags:
-        make_cmd += " " + " ".join(make_flags)
-    else:
-        make_cmd += " -j$(nproc)"
-
-    lfs_package(
+    phase = "ch5" if prefix == "/tools" else "ch6"
+    lfs_autotools(
         name = name,
         srcs = srcs,
-        configure_cmd = configure_cmd,
-        build_cmd = make_cmd,
-        install_cmd = install_cmd if install_cmd else "make install",
+        phase = phase,
+        prefix = prefix,
+        configure_flags = configure_flags,
+        make_flags = make_flags,
+        install_targets = ["install"],
         **kwargs
     )
 
@@ -342,24 +475,20 @@ def lfs_c_binary(
         ldopts = [],
         make_targets = [],
         **kwargs):
-    """
-    Convenience wrapper for simple C/C++ style builds.
-
-    - If make_targets are provided, runs `make -j$(nproc) <targets>` then installs
-      the produced binary from the current directory.
-    - Otherwise, compiles srcs directly with $CC/$CXX and installs to prefix/bin.
+    """Convenience wrapper for simple C/C++ style builds.
 
     Args:
-        name: Target name.
-        srcs: Source files to compile (or feed to make).
-        toolchain: Optional LfsToolchainInfo to seed PATH/CC/CXX.
-        prefix: Install prefix (default /tools).
-        binary_name: Optional override for installed binary name.
-        copts: Extra compiler options for direct compile path.
-        ldopts: Extra linker options for direct compile path.
-        make_targets: If set, run `make -j$(nproc) <targets>` instead of direct compile.
-        **kwargs: Forwarded to lfs_package (deps, patches, env, etc.).
+      name: Target name
+      srcs: Source files
+      toolchain: LfsToolchainInfo provider (default: auto-detected)
+      prefix: Install prefix (default: /tools)
+      binary_name: Output binary name (default: same as name)
+      copts: Compiler options
+      ldopts: Linker options
+      make_targets: If set, use make instead of direct compilation
+      **kwargs: Additional arguments passed to lfs_package
     """
+    resolved_toolchain = toolchain if toolchain else _default_package_toolchain()
     bin_name = binary_name if binary_name else name
     if make_targets:
         build_cmd = "make -j$(nproc) {}".format(" ".join(make_targets))
@@ -377,7 +506,7 @@ def lfs_c_binary(
         srcs = srcs,
         build_cmd = build_cmd,
         install_cmd = install_cmd,
-        toolchain = toolchain,
+        toolchain = resolved_toolchain,
         binary_name = bin_name,
         create_runner = True,
         **kwargs
@@ -393,48 +522,226 @@ def lfs_configure_make(
         destdir = None,
         toolchain = None,
         build_subdir = "build",
+        phase = None,
         **kwargs):
-    """
-    Macro for the common configure/make/install pattern with an out-of-tree build.
+    """Macro for the common configure/make/install pattern with an out-of-tree build.
+
+    Phase can be overridden; defaults to ch5 for /tools prefixes, otherwise ch6.
 
     Args:
-        name: Target name
-        srcs: Source tarball(s)
-        configure_flags: Extra flags appended to ./configure
-        make_targets: Explicit build targets (empty = default all)
-        install_targets: Targets to pass to `make` for installation (default: install)
-        prefix: Install prefix (default /tools)
-        destdir: Optional DESTDIR for staged installs
-        toolchain: Optional LfsToolchainInfo provider
-        build_subdir: Directory used for out-of-tree build (default: "build")
-        **kwargs: Forwarded to lfs_package (deps, patches, env, binary_name, etc.)
+      name: Target name
+      srcs: Source files (tarballs)
+      configure_flags: Additional flags for configure
+      make_targets: Make targets to build
+      install_targets: Install targets (default: ["install"])
+      prefix: Install prefix (default: /tools)
+      destdir: DESTDIR for install
+      toolchain: LfsToolchainInfo provider (default: auto-detected)
+      build_subdir: Build subdirectory (default: "build")
+      phase: Build phase preset (default: auto-detected from prefix)
+      **kwargs: Additional arguments passed to lfs_autotools
     """
-    cfg_cmd = "( mkdir -p {bd} && cd {bd} && ../configure --prefix={prefix}".format(
-        bd = build_subdir,
-        prefix = prefix,
-    )
-    if configure_flags:
-        cfg_cmd += " " + " ".join(configure_flags)
-    cfg_cmd += " )"
-
-    build_cmd = "( mkdir -p {bd} && cd {bd} && make -j$(nproc)".format(bd = build_subdir)
-    if make_targets:
-        build_cmd += " " + " ".join(make_targets)
-    build_cmd += " )"
-
-    install_base = "( cd {bd} && ".format(bd = build_subdir)
-    if destdir:
-        install_base += "DESTDIR={destdir} ".format(destdir = destdir)
-    install_cmd = install_base + "make {targets} )".format(
-        targets = " ".join(install_targets) if install_targets else "install",
-    )
-
-    lfs_package(
+    phase_value = phase if phase else ("ch5" if prefix == "/tools" else "ch6")
+    lfs_autotools(
         name = name,
         srcs = srcs,
-        configure_cmd = cfg_cmd,
-        build_cmd = build_cmd,
-        install_cmd = install_cmd,
+        phase = phase_value,
+        configure_flags = configure_flags,
+        make_targets = make_targets,
+        install_targets = install_targets,
+        prefix = prefix,
+        destdir = destdir,
+        build_subdir = build_subdir,
         toolchain = toolchain,
+        **kwargs
+    )
+
+def _lfs_chroot_command_impl(ctx):
+    """Implementation of the lfs_chroot_command rule.
+
+    Executes a shell script inside the LFS chroot environment.
+
+    Args:
+      ctx: Rule context
+    """
+    sysroot_path = "sysroot"
+
+    # Use short_path for workspace-relative path (e.g., "src/tools/lfs-chroot-helper.sh")
+    # The wrapper script will compute the absolute path at runtime
+    chroot_helper_path = ctx.file.chroot_helper.short_path
+
+    output = ctx.actions.declare_file(ctx.label.name + ".done")
+    script_file = ctx.actions.declare_file(ctx.label.name + ".sh")
+    wrapper_script_file = ctx.actions.declare_file(ctx.label.name + "_wrapper.sh")
+
+    env_lines = [
+        'export HOME="/root"',
+        'export LC_ALL="C"',
+        'export TERM="${TERM:-linux}"',
+        'export LFS="/"',
+        'export PATH="/usr/bin:/usr/sbin:/bin:/sbin"',
+    ]
+
+    if ctx.attr.toolchain:
+        toolchain_info = ctx.attr.toolchain[LfsToolchainInfo]
+        if toolchain_info.bin_path:
+            env_lines.append('export PATH="{}:$PATH"'.format(toolchain_info.bin_path))
+        for key, value in toolchain_info.env.items():
+            env_lines.append('export {}="{}"'.format(key, value))
+
+    for key, value in ctx.attr.env.items():
+        env_lines.append('export {}="{}"'.format(key, value))
+
+    # Write the user-provided command into a script file with environment setup
+    ctx.actions.write(
+        output = script_file,
+        content = "\n".join(
+            ["#!/bin/bash", "set -euo pipefail"] + env_lines + [""] + [ctx.attr.cmd],
+        ),
+        is_executable = True,
+    )
+
+    ctx.actions.expand_template(
+        template = ctx.file._wrapper_template,
+        output = wrapper_script_file,
+        substitutions = {
+            "{sysroot_dir}": sysroot_path,
+            "{helper_abs_path}": chroot_helper_path,
+            "{script_file_execpath}": script_file.path,
+            "{label}": ctx.label.name,
+            "{output_path}": output.path,
+        },
+        is_executable = True,
+    )
+
+    ctx.actions.run_shell(
+        inputs = [script_file, wrapper_script_file, ctx.file.chroot_helper] + ctx.files.lfs_sysroot + ctx.files.data,
+        outputs = [output],
+        command = "bash {}".format(wrapper_script_file.path),
+        mnemonic = "LfsChrootCommand",
+        progress_message = "Executing chroot command: {}".format(ctx.label.name),
+        execution_requirements = {
+            "no-sandbox": "1",
+        },
+    )
+
+    return [DefaultInfo(
+        files = depset([output]),
+        executable = output,
+    )]
+
+lfs_chroot_command = rule(
+    implementation = _lfs_chroot_command_impl,
+    doc = """
+    Executes a shell command inside the LFS chroot environment.
+    """,
+    attrs = {
+        "cmd": attr.string(
+            doc = "The shell commands to execute inside the chroot.",
+            mandatory = True,
+        ),
+        "env": attr.string_dict(
+            doc = "Additional environment variables to export inside the chroot.",
+            default = {},
+        ),
+        "toolchain": attr.label(
+            doc = "Optional toolchain provider to set PATH/ENV inside chroot.",
+            providers = [LfsToolchainInfo],
+        ),
+        "lfs_sysroot": attr.label(
+            doc = "The label of the filegroup representing the LFS sysroot directory.",
+            allow_files = True,
+            mandatory = True,
+        ),
+        "chroot_helper": attr.label(
+            doc = "The label of the filegroup representing the lfs-chroot-helper.sh script.",
+            allow_single_file = True,
+            mandatory = True,
+        ),
+        "data": attr.label_list(
+            doc = "Additional data dependencies for the command.",
+            allow_files = True,
+            default = [],
+        ),
+        "deps": attr.label_list(
+            doc = "Other targets that must complete before this command runs.",
+            default = [],
+        ),
+        "_wrapper_template": attr.label(
+            default = "//tools:lfs_chroot_command_wrapper_template",
+            allow_single_file = True,
+        ),
+    },
+    executable = True,
+)
+
+def lfs_chroot_step(
+        name,
+        cmd,
+        toolchain = None,
+        env = {},
+        lfs_sysroot = "//:lfs_sysroot_files",
+        chroot_helper = "//tools:lfs_chroot_helper_script",
+        tags = [],
+        **kwargs):
+    """
+    Macro wrapper for lfs_chroot_command with sane defaults.
+    """
+    merged_tags = ["manual", "requires-sudo"] + tags
+    resolved_toolchain = toolchain if toolchain else _default_package_toolchain()
+    lfs_chroot_command(
+        name = name,
+        cmd = cmd,
+        env = env,
+        toolchain = resolved_toolchain,
+        lfs_sysroot = lfs_sysroot,
+        chroot_helper = chroot_helper,
+        tags = merged_tags,
+        **kwargs
+    )
+
+def lfs_chroot_extract_tarball(
+        name,
+        tarball_name,
+        dest = "/sources",
+        toolchain = None,
+        env = {},
+        tags = [],
+        **kwargs):
+    """Extract a tarball inside chroot and depend on its completion.
+
+    The extraction directory is typically <dest>/<tarball basename without .tar.*>.
+
+    Args:
+      name: Target name
+      tarball_name: Name of the tarball file (e.g., "perl-5.40.0.tar.xz")
+      dest: Destination directory (default: /sources)
+      toolchain: LfsToolchainInfo provider (default: auto-detected)
+      env: Additional environment variables
+      tags: Build tags
+      **kwargs: Additional arguments passed to lfs_chroot_step
+    """
+    cmd = """
+set -euo pipefail
+tarball="{dest}/{tar}"
+if [ ! -f "$tarball" ]; then
+  echo "Missing tarball: $tarball" >&2
+  exit 1
+fi
+dirname=$(basename "$tarball")
+dirname=${{dirname%%.tar.*}}
+tar -xf "$tarball" -C {dest}
+if [ ! -d "{dest}/$dirname" ]; then
+  echo "Expected directory {dest}/$dirname not found after extraction" >&2
+  exit 1
+fi
+""".format(dest = dest, tar = tarball_name)
+
+    lfs_chroot_step(
+        name = name,
+        cmd = cmd,
+        toolchain = toolchain,
+        env = env,
+        tags = tags,
         **kwargs
     )

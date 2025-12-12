@@ -152,3 +152,40 @@ http_file(
     sha256 = "0e5be4d2937e8bd9b7cd60d46721ce79f88a33415dd68c2d738fb5924638f656",
     urls = ["https://ftpmirror.gnu.org/readline/readline-8.2.13.tar.gz"],
 )
+
+# Chapter 7 sources
+http_file(
+    name = "bison_src",
+    sha256 = "9bba0214ccf7f1079c5d59210045227bcf619519840ebfa80cd3849cff5a5bf2",
+    urls = ["https://ftpmirror.gnu.org/bison/bison-3.8.2.tar.xz"],
+)
+
+http_file(
+    name = "gettext_src",
+    sha256 = "fe10c37353213d78a5b83d48af231e005c4da84db5ce88037d88355938259640",
+    urls = ["https://ftpmirror.gnu.org/gettext/gettext-0.22.5.tar.xz"],
+)
+
+http_file(
+    name = "perl_src",
+    sha256 = "d5325300ad267624cb0b7d512cfdfcd74fa7fe00c455c5b51a6bd53e5e199ef9",
+    urls = ["https://www.cpan.org/src/5.0/perl-5.40.0.tar.xz"],
+)
+
+http_file(
+    name = "python_src",
+    sha256 = "f6d419a6d8743ab26700801b4908d26d97e8b986e14f95de31b32de2b0e79554",
+    urls = ["https://www.python.org/ftp/python/3.12.4/Python-3.12.4.tar.xz"],
+)
+
+http_file(
+    name = "texinfo_src",
+    sha256 = "deeec9f19f159e046fdf8ad22231981806dac332cc372f1c763504ad82b30953",
+    urls = ["https://ftpmirror.gnu.org/texinfo/texinfo-7.1.tar.xz"],
+)
+
+http_file(
+    name = "util_linux_src",
+    sha256 = "d78b37a66f5922d70edf3bdfb01a6b33d34ed3c3cafd6628203b2a2b67c8e8b3",
+    urls = ["https://www.kernel.org/pub/linux/utils/util-linux/v2.40/util-linux-2.40.2.tar.xz"],
+)
