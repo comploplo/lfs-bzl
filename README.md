@@ -334,6 +334,19 @@ cat bazel-out/lfs-logs/binutils_pass1.log
 
 This is a personal learning project, but feedback and suggestions are welcome! File issues or PRs on GitHub.
 
+## 📄 License
+
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Licenses
+
+This repository includes the [Linux From Scratch 12.2 book](https://www.linuxfromscratch.org/) as a Git submodule in `docs/lfs-book/` for reference purposes. The LFS book has its own separate licensing:
+
+- **Book text:** [Creative Commons Attribution-NonCommercial-ShareAlike 2.0](https://creativecommons.org/licenses/by-nc-sa/2.0/)
+- **Code/instructions:** [MIT License](https://opensource.org/licenses/MIT)
+
+See `docs/lfs-book/appendices/license.xml` for the full LFS license details.
+
 ## 📖 Appendix: Resources
 
 ### Official Guides
