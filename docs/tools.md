@@ -24,12 +24,19 @@ ______________________________________________________________________
 
 ## 📁 Files Overview
 
-| File               | Purpose                                                   |
-| ------------------ | --------------------------------------------------------- |
-| `BUILD`            | Package marker (allows other packages to load .bzl files) |
-| `providers.bzl`    | Custom provider for toolchain information                 |
-| `lfs_build.bzl`    | Host-side build rules, autotools helper, toolchain rule   |
-| `lfs_defaults.bzl` | Phase presets for configure/make/install defaults         |
+| File / Dir           | Purpose                                                                |
+| -------------------- | ---------------------------------------------------------------------- |
+| `BUILD`              | Package marker and exported `.bzl` entrypoints                         |
+| `providers.bzl`      | `LfsToolchainInfo` provider                                            |
+| `lfs_build.bzl`      | Backward-compatible re-export module (loads and re-exports everything) |
+| `lfs_package.bzl`    | Core `lfs_package` rule                                                |
+| `lfs_toolchain.bzl`  | `lfs_toolchain` rule + default toolchain selection                     |
+| `lfs_macros.bzl`     | Convenience macros (`lfs_autotools`, `lfs_c_binary`, etc.)             |
+| `lfs_chroot.bzl`     | Chroot rules/macros (`lfs_chroot_command`, `lfs_chroot_step`, etc.)    |
+| `lfs_defaults.bzl`   | Phase presets for configure/make/install defaults                      |
+| `scripts/`           | Shell helpers and generated-script templates                           |
+| `scripts/templates/` | Template scripts expanded by Starlark rules                            |
+| `scripts/tests/`     | Test scripts used by chroot validation targets                         |
 
 ______________________________________________________________________
 
@@ -86,13 +93,30 @@ lfs_package(
 )
 ```
 
-`lfs_toolchain` is defined in `lfs_build.bzl` and simply wraps `bin_path` and
-`env` into `LfsToolchainInfo` so downstream rules can import a coherent
-toolchain configuration.
+`lfs_toolchain` is defined in `lfs_toolchain.bzl` and re-exported from
+`lfs_build.bzl` for backward compatibility.
 
 ______________________________________________________________________
 
-## 2. 🏗️ Build Rules (`lfs_build.bzl`)
+<a id="2-build-rules-lfs_buildbzl"></a>
+
+## 2. 🏗️ Build Rules (`lfs_build.bzl` and `lfs_*.bzl`)
+
+`lfs_build.bzl` is the compatibility entrypoint: it re-exports rules/macros from
+the modular implementation so existing BUILD files can keep using:
+
+```python
+load("//tools:lfs_build.bzl", "lfs_package", "lfs_autotools", "lfs_toolchain")
+```
+
+For more explicit imports, load from the specific module:
+
+```python
+load("//tools:lfs_package.bzl", "lfs_package")
+load("//tools:lfs_macros.bzl", "lfs_autotools")
+load("//tools:lfs_toolchain.bzl", "lfs_toolchain")
+load("//tools:lfs_chroot.bzl", "lfs_chroot_command")
+```
 
 ### `lfs_package` (Rule)
 
@@ -100,19 +124,22 @@ The core rule that handles standard LFS package builds.
 
 #### Attributes
 
-| Attribute       | Type        | Required | Default | Description                                                                                                                                         |
-| --------------- | ----------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`          | string      | Yes      | -       | Target name                                                                                                                                         |
-| `srcs`          | label_list  | No       | `[]`    | Source files (tarballs or individual files)                                                                                                         |
-| `patches`       | label_list  | No       | `[]`    | Patch files applied with `patch -Np1`                                                                                                               |
-| `configure_cmd` | string      | No       | `None`  | Configure command to run                                                                                                                            |
-| `build_cmd`     | string      | No       | `None`  | Build command (typically `make`)                                                                                                                    |
-| `install_cmd`   | string      | No       | `None`  | Install command (typically `make install`)                                                                                                          |
-| `toolchain`     | label       | No       | `None`  | LfsToolchainInfo provider to inject                                                                                                                 |
-| `deps`          | label_list  | No       | `[]`    | Other `lfs_package` targets that must finish first                                                                                                  |
-| `env`           | string_dict | No       | `{}`    | Extra environment variables to export                                                                                                               |
-| `binary_name`   | string      | No       | -       | Binary name in `$LFS/tools/bin/` for executable targets (set `create_runner = True` to emit a runner; defaults to label name when runner requested) |
-| `create_runner` | bool        | No       | `False` | Emit a runner script (uses `binary_name` if set, else the target label)                                                                             |
+| Attribute            | Type        | Required | Default | Description                                                                                                                                         |
+| -------------------- | ----------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`               | string      | Yes      | -       | Target name                                                                                                                                         |
+| `srcs`               | label_list  | No       | `[]`    | Source files (tarballs or individual files)                                                                                                         |
+| `patches`            | label_list  | No       | `[]`    | Patch files applied with `patch -Np1`                                                                                                               |
+| `configure_cmd`      | string      | No       | `None`  | Configure command to run                                                                                                                            |
+| `configure_cmd_file` | label       | No       | `None`  | File containing configure commands (exclusive with `configure_cmd`)                                                                                 |
+| `build_cmd`          | string      | No       | `None`  | Build command (typically `make`)                                                                                                                    |
+| `build_cmd_file`     | label       | No       | `None`  | File containing build commands (exclusive with `build_cmd`)                                                                                         |
+| `install_cmd`        | string      | No       | `None`  | Install command (typically `make install`)                                                                                                          |
+| `install_cmd_file`   | label       | No       | `None`  | File containing install commands (exclusive with `install_cmd`)                                                                                     |
+| `toolchain`          | label       | No       | `None`  | LfsToolchainInfo provider to inject                                                                                                                 |
+| `deps`               | label_list  | No       | `[]`    | Other `lfs_package` targets that must finish first                                                                                                  |
+| `env`                | string_dict | No       | `{}`    | Extra environment variables to export                                                                                                               |
+| `binary_name`        | string      | No       | -       | Binary name in `$LFS/tools/bin/` for executable targets (set `create_runner = True` to emit a runner; defaults to label name when runner requested) |
+| `create_runner`      | bool        | No       | `False` | Emit a runner script (uses `binary_name` if set, else the target label)                                                                             |
 
 #### Behavior
 
@@ -135,7 +162,7 @@ The core rule that handles standard LFS package builds.
 
    - Runs in temporary directory (`mktemp -d`)
    - Streams stdout/stderr to `tracker/logs/<target>.log`
-   - Executes: `configure_cmd` → `build_cmd` → `install_cmd`
+   - Executes: configure/build/install via inline strings *or* `*_cmd_file` scripts (files run with `bash` in the same working directory/environment)
    - Cleans up temp directory on exit
 
 1. **Outputs**
@@ -343,10 +370,18 @@ ______________________________________________________________________
 Runs a command inside the LFS sysroot via the chroot helper. Handles mount/unmount
 of virtual filesystems and sets a sane environment inside chroot.
 
-- Default env: `HOME=/root`, `LC_ALL=C`, `PATH=/usr/bin:/usr/sbin:/bin:/sbin`, `TERM=${TERM:-linux}`, `LFS=/`
+- Default env: starts with `env -i` and sets `HOME=/root`, `PATH=/usr/bin:/usr/sbin:/bin:/sbin`, `TERM=${TERM:-linux}`, plus `MAKEFLAGS`/`TESTSUITEFLAGS` as `-j$(nproc)`.
+- The generated inner script also exports `LC_ALL=C` and `LFS=/` (and any `env`/`toolchain` exports you provide).
 - Optional `env` attribute to add/override exports.
 - Optional `toolchain` (`LfsToolchainInfo`) to prepend `bin_path` and export its `env` (useful for temp_tools_toolchain).
+- Command source can be inline via `cmd` or provided as a file with `cmd_file` (recommended for long chroot scripts).
 - Requires sudo for the helper; keep targets tagged `manual`/`requires-sudo`.
+
+Mount behavior:
+
+- The wrapper mounts VFS only if not already mounted.
+- It unmounts VFS on exit only if it mounted them.
+- To keep mounts across actions, use `--action_env=LFS_CHROOT_KEEP_MOUNTS=1`.
 
 ### `lfs_chroot_step` (Macro)
 
@@ -478,7 +513,7 @@ ______________________________________________________________________
 
 ### Future Enhancements
 
-- [ ] Add `lfs_chroot` rule for Chapter 7+ builds
+- [x] `lfs_chroot_command` implemented for Chapter 7+ builds
 - [ ] Mirror build logs into workspace (currently in execroot `bazel-out/lfs-logs/`)
 - [ ] Better output capturing and logging
 - [ ] Support for `$LFS/usr/bin` binaries (not just `/tools/bin`)

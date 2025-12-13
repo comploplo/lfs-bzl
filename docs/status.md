@@ -2,7 +2,7 @@
 
 **Overall Progress:** ████████░░ 70% (Chapters 1-7 Complete)
 
-**Last Updated:** 2025-12-11
+**Last Updated:** 2025-12-13
 **Target:** Linux From Scratch 12.2 (System V)
 **Build System:** Bazel "Managed Chaos" Architecture
 
@@ -112,23 +112,25 @@
 
 ## Phase 6: Entering Chroot (Chapter 7) ✅ COMPLETE
 
-| Task                       | Status  | Notes                                                   |
-| -------------------------- | ------- | ------------------------------------------------------- |
-| Implement lfs_chroot.bzl   | ✅ Done | lfs_chroot_command + wrapper + helper; fully functional |
-| Create chroot setup target | ✅ Done | chroot_prepare aggregates all prep steps                |
-| Verify chroot environment  | ✅ Done | chroot_smoke_test validates environment                 |
-| Stage Chapter 7 sources    | ✅ Done | All 6 package tarballs copied to $LFS/sources           |
-| Build Gettext              | ✅ Done | i18n tools (version 0.22.5)                             |
-| Build Bison                | ✅ Done | Parser generator (version 3.8.2)                        |
-| Build Perl                 | ✅ Done | Scripting language (version 5.40.0)                     |
-| Build Python               | ✅ Done | Modern build system requirement (version 3.12.4)        |
-| Build Texinfo              | ✅ Done | Documentation system (version 7.1)                      |
-| Build Util-linux           | ✅ Done | System utilities (version 2.40.2)                       |
+| Task                       | Status  | Notes                                                                   |
+| -------------------------- | ------- | ----------------------------------------------------------------------- |
+| Implement lfs_chroot.bzl   | ✅ Done | lfs_chroot_command + wrapper + helper; modularized and fully functional |
+| Create chroot setup target | ✅ Done | chroot_prepare aggregates all prep steps                                |
+| Verify chroot environment  | ✅ Done | chroot_smoke_test validates environment                                 |
+| Stage Chapter 7 sources    | ✅ Done | All 6 package tarballs copied to $LFS/sources                           |
+| Build Gettext              | ✅ Done | i18n tools (version 0.22.5)                                             |
+| Build Bison                | ✅ Done | Parser generator (version 3.8.2)                                        |
+| Build Perl                 | ✅ Done | Scripting language (version 5.40.0)                                     |
+| Build Python               | ✅ Done | Modern build system requirement (version 3.12.4)                        |
+| Build Texinfo              | ✅ Done | Documentation system (version 7.1)                                      |
+| Build Util-linux           | ✅ Done | System utilities (version 2.40.2)                                       |
+| Chapter 7 cleanup          | ✅ Done | `chroot_finalize` removes `/tools` + temp cruft                         |
 
 **Rule:** Use `lfs_chroot_command`/`lfs_chroot_step` for all Chapter 7+ builds.
 **Toolchain:** `//packages/chapter_07:chroot_base_toolchain` defined.
 **Aggregate Target:** ✅ `//packages/chapter_07:chroot_toolchain_phase` orchestrates all builds.
 **Validation:** ✅ `//packages/chapter_07:chroot_smoke_versions` verifies installations.
+**Finalize:** ✅ `//packages/chapter_07:chroot_finalize` performs Chapter 7 cleanup (destructive).
 
 ## Phase 7: Final System (Chapter 8+) 🚧 IN PROGRESS
 
@@ -179,9 +181,22 @@ bazel run //packages/chapter_07:chroot_smoke_versions
 
 ## ⚠️ Known Issues
 
-1. **Chroot Operations:** Chapter 7+ requires sudo access for the chroot helper script
-1. **Build Logs:** Logs live in Bazel execroot (`bazel-out/lfs-logs/`), not workspace directory
-1. **Parallel Builds:** Parallel chroot builds are not yet tested/supported
+1. **Sysroot Ownership After Chapter 7:** After running `chroot_chown_root`, the sysroot
+   becomes root-owned, preventing re-runs of Chapter 5-6 builds. The build system
+   automatically detects this and provides recovery guidance. To restore user ownership:
+   `sudo chown -R $USER:$USER src/sysroot/`. See [docs/troubleshooting.md](troubleshooting.md)
+   and [docs/chroot.md](chroot.md) for details.
+
+1. **Chroot Operations:** Chapter 7+ requires sudo access for the chroot helper script.
+   Configure sudoers: see [docs/chroot.md](chroot.md#sudo-configuration). Mount cleanup
+   uses reference counting to prevent leaks during parallel builds.
+
+1. **Build Logs:** Logs live in Bazel execroot (`bazel-out/lfs-logs/`), not workspace directory.
+   View with: `cat bazel-out/lfs-logs/<package>.log`
+
+1. **Parallel Builds:** Chapter 7 packages build in parallel. Bazel handles scheduling based
+   on available resources. Use `--jobs=N` to control concurrency if needed (e.g., `--jobs=2`
+   to limit to 2 concurrent builds on resource-constrained systems).
 
 ## 🔜 Next Steps
 
@@ -198,8 +213,8 @@ bazel run //packages/chapter_07:chroot_smoke_versions
 - **Packages Defined:** 28 of ~100+ (28%)
 - **Packages Built:** 28 of 28 defined (100%)
 - **Chapters Complete:** 7 of 11 (64%)
-- **Lines of Starlark:** ~1,500
-- **Lines of Shell:** ~800
+- **Lines of Starlark:** ~1,400 (modularized into focused files)
+- **Lines of Shell:** ~1,060 (modularized chroot helpers)
 - **Build Success Rate:** 100% for defined packages
 
 ### Related Documentation

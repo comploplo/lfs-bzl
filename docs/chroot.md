@@ -35,19 +35,23 @@ These packages are required by Chapter 8 build scripts but weren't needed in Cha
 
 Before building Chapter 7, ensure:
 
-1. ✅ Chapter 5 cross-toolchain is built (`//packages/chapter_05:cross_toolchain`)
-1. ✅ Chapter 6 temporary tools are built (`//packages/chapter_06:all_temp_tools`)
-1. ✅ Sudo access configured for the chroot helper script
+- ✅ Sudo access configured for the chroot helper script
+- Build Chapter 7 end-to-end: `bazel build //packages:bootstrap_ch7`
+- Or run just Chapter 7: `bazel build //packages/chapter_07:chroot_finalize`
 
 ### Sudo Configuration
 
 The chroot helper requires sudo. Add this to `/etc/sudoers.d/lfs-bazel-chroot`:
 
 ```bash
-<your-user> ALL=(root) NOPASSWD: /path/to/lfs-bzl/src/tools/lfs-chroot-helper.sh
+<your-user> ALL=(root) NOPASSWD: /path/to/lfs-bzl/src/tools/scripts/lfs_chroot_helper.sh
 ```
 
 Replace `/path/to/lfs-bzl` with your actual repository path and `<your-user>` with your username.
+
+Note: `NOPASSWD` is convenient for Bazel, but it effectively grants privileged
+operations to your user via this helper. Only do this on a machine you trust,
+and prefer a dedicated dev VM.
 
 ### Build Commands
 
@@ -65,7 +69,14 @@ bazel build //packages/chapter_07:chroot_toolchain_phase
 
 # 4. Verify installations
 bazel run //packages/chapter_07:chroot_smoke_versions
+
+# 5. (Optional, destructive) Perform Chapter 7 cleanup (removes /tools)
+bazel build //packages/chapter_07:chroot_finalize
 ```
+
+Note: `//packages/chapter_07:stage_ch7_sources` uses the sudo allowlisted chroot helper
+to copy tarballs into the sysroot, since the Chapter 7 preparation steps may leave the
+sysroot root-owned.
 
 ### What Happens During Build
 
@@ -73,8 +84,11 @@ bazel run //packages/chapter_07:chroot_smoke_versions
 1. **Environment Prep** - Directories created, essential files seeded (`/etc/passwd`, `/etc/group`, etc.)
 1. **Virtual Filesystems** - Chroot helper mounts `/dev`, `/proc`, `/sys`, `/run`
 1. **Package Extraction** - Each tarball extracted inside chroot
-1. **Build Execution** - Standard `./configure && make && make install` inside chroot
-1. **Cleanup** - Temporary files removed, ownership corrected
+1. **Build Execution** - Commands follow the LFS book for each package
+1. **Cleanup** - If requested, removes docs, `.la`, and `/tools`
+
+**Parallel Build Support**: Chapter 7 packages build in parallel. Use `--jobs=N` to control
+concurrency if needed. Mount locking prevents conflicts automatically.
 
 ## 🔍 Build Details
 
@@ -102,6 +116,9 @@ lfs_chroot_step(
 1. Helper script mounts virtual filesystems (if not already mounted)
 1. Enters chroot and executes `inner.sh`
 1. Creates `.done` marker file for Bazel caching
+
+For longer sequences, keep BUILD files readable by moving the commands into a
+`.sh` and using `cmd_file` on `lfs_chroot_step`.
 
 ### Environment Inside Chroot
 
@@ -144,7 +161,7 @@ Expected output:
 
 ```
 bison (GNU Bison) 3.8.2
-gettext (GNU gettext-runtime) 0.22.5
+msgfmt (GNU gettext-tools) 0.22.5
 version='5.40.0';
 Python 3.12.4
 texi2any (GNU texinfo) 7.1
@@ -171,7 +188,14 @@ sudo -l         # List your sudo permissions
 **Solution:** Unmount manually:
 
 ```bash
-sudo src/tools/lfs-chroot-helper.sh unmount-vfs $(pwd)/src/sysroot
+sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+```
+
+If you want to keep mounts between steps, set `LFS_CHROOT_KEEP_MOUNTS=1` for
+build actions:
+
+```bash
+bazel build //packages/chapter_07:chroot_toolchain_phase --action_env=LFS_CHROOT_KEEP_MOUNTS=1
 ```
 
 ### Package build fails inside chroot
@@ -182,14 +206,121 @@ sudo src/tools/lfs-chroot-helper.sh unmount-vfs $(pwd)/src/sysroot
 
 ```bash
 bazel build //packages/chapter_06:all_temp_tools
-ls -la src/sysroot/usr/bin/  # Verify tools exist
+ls -la sysroot/usr/bin/  # Verify tools exist
 ```
 
 ### Chroot helper script not found
 
-**Problem:** `lfs-chroot-helper.sh` path is relative, not absolute.
+**Problem:** `lfs_chroot_helper.sh` path is relative, not absolute.
 
 **Solution:** Use absolute path in sudoers and wrapper scripts.
+
+______________________________________________________________________
+
+## 🔄 Sysroot Ownership Lifecycle
+
+Chapter 7's `chroot_chown_root` step changes ownership of the entire sysroot to
+root:root. This is required for chroot operations but has implications for your
+workflow.
+
+### The Three Ownership States
+
+**State 1: Chapter 5-6 (User-Owned)**
+
+```bash
+$ ls -ld src/sysroot/{usr,tools,lib}
+drwxrwxr-x user user src/sysroot/usr
+drwxrwxr-x user user src/sysroot/tools
+drwxrwxr-x user user src/sysroot/lib
+```
+
+- Regular user can write to sysroot
+- Chapter 5-6 builds work normally
+- Cannot enter chroot as unprivileged user
+
+**State 2: Chapter 7+ (Root-Owned)**
+
+```bash
+$ ls -ld src/sysroot/{usr,tools,lib}
+drwxr-xr-x root root src/sysroot/usr
+drwxr-xr-x root root src/sysroot/tools
+drwxr-xr-x root root src/sysroot/lib
+```
+
+- Only root can write to sysroot
+- Chapter 7+ chroot builds work normally
+- Chapter 5-6 builds FAIL with "Permission denied"
+
+**State 3: Restored User Ownership (Development)**
+
+```bash
+$ sudo chown -R $USER:$USER src/sysroot/
+$ ls -ld src/sysroot/{usr,tools,lib}
+drwxrwxr-x user user src/sysroot/usr
+drwxrwxr-x user user src/sysroot/tools
+drwxrwxr-x user user src/sysroot/lib
+```
+
+- Back to State 1 (can iterate on Chapter 5-6)
+- Must re-run `chroot_chown_root` to return to State 2
+
+### Automatic Detection
+
+The build system automatically detects ownership problems when running
+Chapter 5-6 targets:
+
+```bash
+$ bazel build //packages/chapter_05:binutils_pass1
+
+================================================================================
+ERROR: Sysroot Ownership Problem Detected
+================================================================================
+[...detailed recovery message...]
+
+RECOVERY:
+  Run this command to restore user ownership:
+
+    sudo chown -R $USER:$USER /path/to/sysroot
+```
+
+### Best Practices
+
+**For Linear Builds (Ch5 → Ch6 → Ch7 → Ch8):**
+
+- Build forward only, no need to restore ownership
+- Create backup after Chapter 6 if you want a rollback point
+
+**For Iterative Development:**
+
+- Use git worktrees for isolated environments
+- Or restore ownership as needed between chapter contexts
+- Document your current state (user-owned vs root-owned)
+
+**For CI/CD:**
+
+- Build in a single pass (no ownership changes needed)
+- Use fresh checkout for each build
+- Or use containers with proper permissions
+
+### Troubleshooting FAQ
+
+**Q: Why doesn't Bazel prevent this?**
+
+A: Bazel's dependency graph doesn't enforce ordering across chapters. You can
+re-run earlier targets after later ones complete. The ownership check
+detects this and provides guidance.
+
+**Q: Can we automate the recovery?**
+
+A: No. Automatic `sudo chown` would be a security risk. The build system
+provides clear instructions for manual recovery.
+
+**Q: Will this affect Chapter 8+ builds?**
+
+A: No. Chapter 8+ uses chroot (runs as root inside chroot), so ownership
+doesn't matter. This only affects Chapter 5-6 (unsandboxed host builds).
+
+______________________________________________________________________
 
 ## 📊 Package Details
 
@@ -233,7 +364,7 @@ ls -la src/sysroot/usr/bin/  # Verify tools exist
 
 After completing Chapter 7:
 
-1. **Backup your sysroot** - Create a tarball of `src/sysroot/` for safety
+1. **Backup your sysroot** - Create a tarball of `sysroot/` for safety
 1. **Move to Chapter 8** - Build the final system (~80 packages)
 1. **Stripping** - Remove debug symbols to save space (optional)
 

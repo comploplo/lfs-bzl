@@ -45,6 +45,7 @@ Before you begin, you'll need:
 ## 🚀 Quickstart
 
 ```bash
+# IMPORTANT: Bazel workspace root is `src/` (commands won't work from repo root)
 cd src
 
 # 1️⃣ Verify your host toolchain meets LFS requirements
@@ -58,6 +59,9 @@ bazel build //packages/chapter_06:all_temp_tools
 
 # 4️⃣ Stage sources for chroot builds (Chapter 7)
 bazel build //packages/chapter_07:stage_ch7_sources
+
+# 5️⃣ Run all Chapter 7 chroot steps (requires sudo)
+bazel build //packages:bootstrap_ch7
 
 # 🧪 Validate the cross-toolchain:
 bazel run //packages/hello_world:hello_cross  # Uses Cross Toolchain (Ch 5) ✅
@@ -140,6 +144,133 @@ Current implementation status:
 - ⏳ **Chapter 9-11:** Configuration, kernel, bootloader (planned)
 
 See [docs/status.md](docs/status.md) for detailed progress tracking.
+
+## ⚠️ Common Pitfalls
+
+### Sysroot Ownership After Chapter 7
+
+After running Chapter 7 builds, the sysroot ownership changes to root:root. This
+prevents re-running Chapter 5-6 builds as a regular user.
+
+**Symptom**: "Permission denied" errors when building Chapter 5-6 after Chapter 7
+
+**Detection**: The build system automatically detects this and shows a recovery message
+
+**Recovery**:
+
+```bash
+sudo chown -R $USER:$USER src/sysroot/
+```
+
+**Why this happens**: Chapter 7's `chroot_chown_root` prepares the chroot environment
+by changing ownership. This is expected LFS behavior.
+
+**Best practice**: Build linearly (Ch5 → Ch6 → Ch7 → Ch8+) without going backwards.
+If you need to iterate on early chapters, restore ownership as shown above.
+
+See [docs/troubleshooting.md](docs/troubleshooting.md) for detailed recovery procedures.
+
+## 🔄 Cleanup and Restart
+
+### Starting Fresh
+
+To completely restart the build from scratch:
+
+```bash
+cd src
+
+# 1️⃣ IMPORTANT: Unmount virtual filesystems first (if Chapter 7 was run)
+sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+
+# Check that all mounts are cleared (should show nothing)
+findmnt | grep sysroot
+
+# 2️⃣ Remove the sysroot directory
+rm -rf sysroot/
+
+# 3️⃣ Clean Bazel's cache (optional, for a truly clean build)
+bazel clean --expunge
+
+# 4️⃣ Rebuild from Chapter 5
+bazel build //packages/chapter_05:cross_toolchain
+```
+
+**⚠️ WARNING:** Always unmount before removing sysroot! Removing mounted filesystems can corrupt your host system.
+
+### Restarting from a Specific Chapter
+
+You don't need to start from scratch if you want to iterate on a later chapter:
+
+**Restart Chapter 6 only:**
+
+```bash
+# Remove Chapter 6 artifacts
+rm -rf sysroot/usr/
+
+# Rebuild Chapter 6
+bazel clean  # Clear Bazel's action cache
+bazel build //packages/chapter_06:all_temp_tools
+```
+
+**Restart Chapter 7 only:**
+
+```bash
+# Unmount first!
+sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+
+# Remove Chapter 7 artifacts
+rm -rf sysroot/{bin,sbin,lib,lib64,etc,var}
+rm -rf sysroot/usr/bin/{bison,perl,python3,makeinfo}
+
+# Rebuild Chapter 7
+bazel clean
+bazel build //packages/chapter_07:chroot_finalize
+```
+
+### Checking Mount Status
+
+Before cleanup, always check if virtual filesystems are mounted:
+
+```bash
+# Check current mounts
+findmnt | grep sysroot
+
+# Check refcount (should not exist or be 0)
+cat src/sysroot/tmp/.lfs-mount-refcount 2>/dev/null
+
+# If mounts exist, unmount them (run until refcount reaches 0)
+sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+```
+
+**Why this matters:** Chapter 7+ operations mount `/dev`, `/proc`, `/sys`, `/run`, etc. into the sysroot. These must be unmounted before cleanup to avoid:
+
+- Permission errors during `rm -rf`
+- Accidentally affecting your host system
+- Resource leaks
+
+### Clean Build vs Incremental Build
+
+**Clean build (start from scratch):**
+
+```bash
+sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+rm -rf sysroot/
+bazel clean --expunge
+bazel build //packages/chapter_06:all_temp_tools
+```
+
+**Incremental build (preserve sysroot):**
+
+```bash
+# Just rebuild a specific target
+bazel build //packages/chapter_06:m4
+
+# Or clean Bazel's cache but keep sysroot
+bazel clean
+bazel build //packages/chapter_06:all_temp_tools
+```
+
+**Best practice:** Use incremental builds during development. Only do clean builds when troubleshooting or starting fresh.
 
 ## 💻 Development Notes
 

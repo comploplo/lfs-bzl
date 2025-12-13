@@ -49,6 +49,11 @@ lfs_package(
         popd
 
         # Configure for cross-compilation
+        #
+        # NOTE: The Chapter 5 cross-toolchain is sufficient for C builds, but it
+        # cannot reliably link ncurses' C++ bindings (it lacks a proper shared
+        # unwind/runtime). We disable the C++ bindings here; later toolchains
+        # (Chapter 7+) can enable them if desired.
         ./configure --prefix=/usr \\
             --host=$LFS_TGT \\
             --build=$(./config.guess) \\
@@ -56,14 +61,14 @@ lfs_package(
             --with-manpage-format=normal \\
             --with-shared \\
             --without-normal \\
-            --with-cxx-shared \\
+            --without-cxx-binding \\
             --without-debug \\
             --without-ada \\
             --disable-stripping
     """,
     install_cmd = """
         make DESTDIR=$LFS TIC_PATH=$(pwd)/build/progs/tic install
-        ln -sv libncursesw.so $LFS/usr/lib/libncurses.so
+        ln -sfv libncursesw.so $LFS/usr/lib/libncurses.so
         sed -e 's/^#if.*XOPEN.*$/#if 1/' -i $LFS/usr/include/curses.h
     """,
     toolchain = "//packages/chapter_05:cross_toolchain",
@@ -143,7 +148,7 @@ lfs_package(
     install_cmd = """
         make DESTDIR=$LFS install
         mkdir -p $LFS/bin
-        ln -sv bash $LFS/bin/sh
+        ln -sfv bash $LFS/bin/sh
     """,
     toolchain = "//packages/chapter_05:cross_toolchain",
     deps = [":ncurses"],
@@ -390,7 +395,7 @@ lfs_package(
     """,
     install_cmd = """
         ( cd build && make DESTDIR=$LFS install )
-        ln -sv gcc $LFS/usr/bin/cc
+        ln -sfv gcc $LFS/usr/bin/cc
     """,
     toolchain = "//packages/chapter_05:cross_toolchain",
     deps = [":binutils_pass2"],
@@ -422,6 +427,9 @@ lfs_toolchain(
         "LFS_TGT": "x86_64-lfs-linux-gnu",
         "LD_LIBRARY_PATH": "$LFS/usr/lib",
     },
+    deps = [
+        ":all_temp_tools",
+    ],
 )
 
 ###############################################################################

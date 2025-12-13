@@ -35,18 +35,39 @@ lfs_c_binary(
 # Toolchain target: //packages/chapter_06:temp_tools_toolchain
 
 # 4️⃣ Chroot run using the Chapter 7 base toolchain
-# Copies hello.c into the sysroot then compiles and runs it inside the chroot
-lfs_package(
+# Copies hello.c into the sysroot then compiles and runs it inside the chroot.
+#
+# NOTE: Chapter 7's chroot preparation includes a sysroot ownership change
+# (root:root). This target stages hello.c from within the chroot so it works
+# even after ownership changes.
+lfs_chroot_command(
     name = "stage_hello_in_sysroot",
-    srcs = ["hello.c"],
-    build_cmd = "true",
-    install_cmd = "install -D \"$EXECROOT/packages/hello_world/hello.c\" $LFS/tmp/hello_world/hello.c",
-    deps = ["//packages/chapter_07:chroot_toolchain_phase"],
+    cmd = """
+set -euo pipefail
+mkdir -p /tmp/hello_world
+cat > /tmp/hello_world/hello.c <<'EOF'
+#include <stdio.h>
+
+int main(void)
+{
+    printf("Hello from LFS Bazel Bootstrap!\\n");
+    printf("Build system is working correctly.\\n");
+    return 0;
+}
+EOF
+""",
+    lfs_sysroot = "//:lfs_sysroot_files",
+    tags = [
+        "manual",
+        "requires-sudo",
+    ],
+    toolchain = "//packages/chapter_07:chroot_base_toolchain",
+    visibility = ["//visibility:public"],
+    deps = ["//packages/chapter_07:chroot_prepare"],
 )
 
 lfs_chroot_command(
     name = "hello_chroot",
-    chroot_helper = "//tools:lfs_chroot_helper_script",
     cmd = """
 set -euo pipefail
 cd /tmp/hello_world
@@ -62,6 +83,6 @@ $CC hello.c -o hello_chroot
     visibility = ["//visibility:public"],
     deps = [
         ":stage_hello_in_sysroot",
-        "//packages/chapter_07:chroot_toolchain_phase",
+        "//packages/chapter_07:chroot_prepare",
     ],
 )

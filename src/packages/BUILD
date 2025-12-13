@@ -12,6 +12,15 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# One-shot build of everything needed to finish Chapter 7.
+#
+# Note: Chapter 7 steps require sudo and are tagged accordingly.
+filegroup(
+    name = "bootstrap_ch7",
+    srcs = ["//packages/chapter_07:chroot_finalize"],
+    visibility = ["//visibility:public"],
+)
+
 # Toolchain provider labels for quick reference.
 filegroup(
     name = "toolchains",

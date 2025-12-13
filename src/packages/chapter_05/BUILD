@@ -24,16 +24,14 @@ filegroup(
 )
 
 # Linux API headers
-lfs_autotools(
+# This step doesn’t follow the autotools install pattern; it installs by copying
+# headers into $LFS/usr after generating them.
+lfs_package(
     name = "linux_headers",
     srcs = ["@linux_headers_src//file"],
-    configure_flags = [],
+    build_cmd = "make mrproper && make headers",
+    configure_cmd = "true",
     install_cmd = "find usr/include -name '.*' -delete && cp -rv usr/include $LFS/usr",
-    make_targets = [
-        "mrproper",
-        "headers",
-    ],
-    phase = "ch5",
 )
 
 # Binutils Pass 1 (configure + make + install via helper)
@@ -138,37 +136,26 @@ lfs_package(
     ],
 )
 
-# Libstdc++ (from GCC sources)
-lfs_autotools(
+# Libstdc++ (from GCC sources) - Build only the C++ standard library
+lfs_package(
     name = "libstdcpp",
     srcs = [
         "@gcc_src//file",
-        "@gmp_src//file",
-        "@mpc_src//file",
-        "@mpfr_src//file",
     ],
-    configure_flags = [
-        "--host=$LFS_TGT",
-        "--build=$(../config.guess)",
-        "--prefix=/usr",
-        "--disable-multilib",
-        "--disable-nls",
-        "--disable-libstdcxx-threads",
-        "--disable-libstdcxx-pch",
-        "--with-gxx-include-dir=/tools/$LFS_TGT/include/c++/14.2.0",
-    ],
-    install_targets = ["install"],
-    phase = "ch5",
-    pre_configure_cmds = [
-        # Bundle gmp/mpfr/mpc into the GCC tree
-        "for d in ../gmp-*/ ../mpfr-*/ ../mpc-*/ ; do",
-        "  [ -d \"$d\" ] || continue",
-        "  base=\"$(basename \"$d\")\"",
-        "  pkg=\"${base%%-*}\"",
-        "  rm -rf \"$pkg\"",
-        "  mv \"$d\" \"$pkg\"",
-        "done",
-    ],
+    build_cmd = "( cd build && make -j$(nproc) )",
+    configure_cmd = """
+        ( mkdir -p build && cd build && \\
+          ../libstdc++-v3/configure \\
+            --host=$LFS_TGT \\
+            --build=$(../config.guess) \\
+            --prefix=/usr \\
+            --disable-multilib \\
+            --disable-nls \\
+            --disable-libstdcxx-threads \\
+            --disable-libstdcxx-pch \\
+            --with-gxx-include-dir=/tools/$LFS_TGT/include/c++/14.2.0 )
+    """,
+    install_cmd = "( cd build && DESTDIR=$LFS make install )",
     deps = [
         ":glibc",
     ],
@@ -183,4 +170,11 @@ lfs_toolchain(
         "CXX": "x86_64-lfs-linux-gnu-g++",
         "LFS_TGT": "x86_64-lfs-linux-gnu",
     },
+    deps = [
+        ":binutils_pass1",
+        ":gcc_pass1",
+        ":glibc",
+        ":libstdcpp",
+        ":linux_headers",
+    ],
 )

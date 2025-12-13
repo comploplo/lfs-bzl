@@ -84,27 +84,77 @@ ______________________________________________________________________
 
 ```
 mkdir: cannot create directory 'sysroot/usr': Permission denied
+
+================================================================================
+ERROR: Sysroot Ownership Problem Detected
+================================================================================
+The sysroot directory has been changed to root ownership...
 ```
 
-**Causes:**
+**Root Cause:**
 
-1. Sysroot owned by root (from previous sudo operations)
-1. File permissions too restrictive
+This happens when you try to re-run Chapter 5-6 builds AFTER running Chapter 7's
+`chroot_chown_root` step. This is expected behavior, not a bug!
+
+**The Build Lifecycle:**
+
+1. Chapter 5-6: Build as regular user → sysroot owned by user
+1. Chapter 7: Run `chroot_chown_root` → sysroot owned by root
+1. Attempting Chapter 5-6 again → FAILS (can't write to root-owned dirs)
 
 **Solutions:**
+
+**Option 1: Restore user ownership (recommended for development)**
 
 ```bash
 # Reclaim ownership of sysroot
 sudo chown -R $USER:$USER src/sysroot/
 
-# Check permissions
-ls -ld src/sysroot/
+# Verify ownership
+ls -ld src/sysroot/usr src/sysroot/tools
 # Should show your user, not root
 
-# If still broken, recreate sysroot
-rm -rf src/sysroot/
-mkdir -p src/sysroot/{tools,usr,sources}
+# Now you can re-run Chapter 5-6 builds
+bazel build //packages/chapter_05:binutils_pass1
 ```
+
+**Option 2: Create a checkpoint backup**
+
+```bash
+# Before running Chapter 7, create a backup at the Chapter 6 state
+cd src
+tar czf ../sysroot-ch6-backup.tar.gz sysroot/
+
+# Later, to restore:
+cd src
+rm -rf sysroot/
+tar xzf ../sysroot-ch6-backup.tar.gz
+```
+
+**Option 3: Use separate build environments**
+
+```bash
+# For iterative Chapter 5-6 development
+git worktree add ../lfs-bzl-ch6 HEAD
+cd ../lfs-bzl-ch6/src
+bazel build //packages/chapter_06:all_temp_tools
+
+# For Chapter 7+ work
+cd original-repo/src
+bazel build //packages/chapter_07:chroot_toolchain_phase
+```
+
+**Important Notes:**
+
+- The build system now detects this issue automatically and provides guidance
+- Restoring ownership UNDOES Chapter 7 changes (you'll need to re-run chroot_chown_root)
+- This is a natural consequence of the LFS bootstrap process
+- Consider your workflow: building forward (Ch5→Ch6→Ch7) vs iterating on early chapters
+
+**See Also:**
+
+- [docs/chroot.md](chroot.md) - Chapter 7 ownership lifecycle explained
+- [docs/status.md](status.md) - Known issues
 
 ______________________________________________________________________
 
