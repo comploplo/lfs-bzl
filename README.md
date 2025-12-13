@@ -172,30 +172,47 @@ See [docs/troubleshooting.md](docs/troubleshooting.md) for detailed recovery pro
 
 ## 🔄 Cleanup and Restart
 
-### Starting Fresh
+### Starting Fresh (Full Rebuild: Chapter 7 → Nothing → Chapter 7)
 
-To completely restart the build from scratch:
+To completely restart the build from scratch after completing Chapter 7:
 
 ```bash
 cd src
 
-# 1️⃣ IMPORTANT: Unmount virtual filesystems first (if Chapter 7 was run)
+# 1️⃣ IMPORTANT: Unmount virtual filesystems first (Chapter 7 mounts /dev, /proc, etc.)
 sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
 
-# Check that all mounts are cleared (should show nothing)
+# 2️⃣ Verify all mounts are cleared (should show nothing)
 findmnt | grep sysroot
 
-# 2️⃣ Remove the sysroot directory
+# 3️⃣ Remove the entire sysroot directory
 rm -rf sysroot/
 
-# 3️⃣ Clean Bazel's cache (optional, for a truly clean build)
+# 4️⃣ Clean Bazel's cache (optional, for a truly clean build)
 bazel clean --expunge
 
-# 4️⃣ Rebuild from Chapter 5
+# 5️⃣ Rebuild the complete bootstrap (Chapter 5 → 6 → 7)
+# Build cross-toolchain (Chapter 5) - ~5-10 minutes
 bazel build //packages/chapter_05:cross_toolchain
+
+# Build temporary tools (Chapter 6) - ~30-45 minutes
+bazel build //packages/chapter_06:all_temp_tools
+
+# Stage sources for chroot builds (Chapter 7 prep)
+bazel build //packages/chapter_07:stage_ch7_sources
+
+# Run all Chapter 7 chroot steps (requires sudo) - ~15-20 minutes
+bazel build //packages:bootstrap_ch7
 ```
 
 **⚠️ WARNING:** Always unmount before removing sysroot! Removing mounted filesystems can corrupt your host system.
+
+```bash
+# Always unmount first:
+sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+```
+
+**Expected total rebuild time:** ~1-2 hours depending on hardware (parallel builds used automatically)
 
 ### Restarting from a Specific Chapter
 
