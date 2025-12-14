@@ -303,20 +303,6 @@ bazel build //packages/chapter_06:all_temp_tools
 - **Custom rules:** All build logic lives in `src/tools/lfs_build.bzl`
 - **Source definitions:** Package URLs and checksums in `src/MODULE.bazel`
 
-### Debugging
-
-```bash
-# View build commands
-bazel build //packages/chapter_05:binutils_pass1 --subcommands
-
-# Force rebuild
-bazel clean
-bazel build //packages/chapter_05:cross_toolchain
-
-# Check logs
-cat bazel-out/lfs-logs/binutils_pass1.log
-```
-
 ## 📚 Documentation
 
 ### Core Documentation

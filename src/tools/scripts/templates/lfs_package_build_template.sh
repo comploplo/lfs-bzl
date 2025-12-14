@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 # shellcheck disable=SC1054,SC1083,SC1009,SC1073,SC1056,SC1072
-# This is a template file with placeholders like {toolchain_exports} that get
-# replaced by the build system. Shellcheck should not analyze the raw template.
+# This is a template file with placeholders that get replaced by the build system.
+# Shellcheck should not analyze the raw template.
 
 # LFS Package Build Script
 # Package: {label}
@@ -27,11 +27,18 @@ export LFS="$WORKSPACE_ROOT/{sysroot_path}"
 export LC_ALL=POSIX
 export LFS_TGT=x86_64-lfs-linux-gnu
 export PATH="$LFS/tools/bin:$PATH"
+# shellcheck disable=SC1083,SC1054
 {toolchain_exports}
+# shellcheck disable=SC1083,SC1054
 {extra_env}
 
 # Function: Check sysroot ownership and provide recovery guidance
 check_sysroot_ownership() {
+    # Skip if explicitly disabled (chroot builds run as root)
+    if [[ "{skip_ownership_check}" == "1" ]]; then
+        return 0
+    fi
+
     # Skip if running as root (can write to root-owned files)
     if [[ $EUID -eq 0 ]]; then
         return 0
@@ -120,14 +127,19 @@ WORK_DIR="$(mktemp -d)"
 trap "rm -rf $WORK_DIR" EXIT
 cd "$WORK_DIR"
 
+# shellcheck disable=SC1083,SC1054
 {src_handling}
 
+# shellcheck disable=SC1083,SC1054
 {patch_handling}
 
+# shellcheck disable=SC1083,SC1054
 {configure_block}
 
+# shellcheck disable=SC1083,SC1054
 {build_block}
 
+# shellcheck disable=SC1083,SC1054
 {install_block}
 
 # Mark success

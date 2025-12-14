@@ -111,7 +111,6 @@ chmod +x "{out}"
 
     ctx.actions.run_shell(
         inputs = [script_file, wrapper_script_file, ctx.file.chroot_helper] +
-                 ctx.files.lfs_sysroot +
                  ctx.files.data +
                  toolchain_files +
                  cmd_inputs +
@@ -167,7 +166,6 @@ exec bash "$WRAPPER_SCRIPT"
         files = depset([output]),
         executable = runnable_script,
         runfiles = ctx.runfiles(files = [script_file, wrapper_script_file, ctx.file.chroot_helper] +
-                                        ctx.files.lfs_sysroot +
                                         ctx.files.data +
                                         toolchain_files +
                                         depset(transitive = [d.files for d in ctx.attr.deps]).to_list()),
@@ -285,7 +283,6 @@ def _lfs_sysroot_stage_files_impl(ctx):
 
     ctx.actions.run_shell(
         inputs = [wrapper_script_file, ctx.file.chroot_helper] +
-                 ctx.files.lfs_sysroot +
                  ctx.files.srcs +
                  depset(transitive = [d.files for d in ctx.attr.deps]).to_list(),
         outputs = [output],

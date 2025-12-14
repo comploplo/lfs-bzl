@@ -26,7 +26,7 @@ def _default_phase_opts(phase, prefix, destdir, build_subdir, make_flags):
     """Merge user-provided options with phase defaults.
 
     Args:
-        phase: Phase identifier (ch5, ch6, ch7)
+        phase: Phase identifier (ch5, ch6, ch7, ch8_chroot)
         prefix: Install prefix override (or None for default)
         destdir: DESTDIR override (or None for default)
         build_subdir: Build subdirectory override (or None for default)
@@ -41,6 +41,7 @@ def _default_phase_opts(phase, prefix, destdir, build_subdir, make_flags):
         "destdir": destdir if destdir else defaults["destdir"],
         "build_subdir": build_subdir if build_subdir else defaults["build_subdir"],
         "make_flags": make_flags if make_flags else defaults["make_flags"],
+        "skip_ownership_check": defaults.get("skip_ownership_check", False),
     }
 
 def _render_configure(prefix, build_subdir, configure_flags, pre_cmds = []):
@@ -186,6 +187,7 @@ def lfs_autotools(
             destdir = opts["destdir"],
         ),
         toolchain = resolved_toolchain,
+        skip_ownership_check = opts["skip_ownership_check"],
         env = env,
         **kwargs
     )
@@ -252,6 +254,7 @@ def lfs_plain_make(
         build_cmd = build_cmd,
         install_cmd = final_install,
         toolchain = resolved_toolchain,
+        skip_ownership_check = opts["skip_ownership_check"],
         env = env,
         **kwargs
     )

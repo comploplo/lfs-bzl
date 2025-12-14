@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-# shellcheck disable=SC1083
-# This is a template file with placeholders like {src_paths} that get
-# replaced by the build system. Shellcheck should not analyze the raw template.
+# shellcheck disable=SC1083,SC1054,SC1009,SC1073,SC1056,SC1072
+# This is a template file with placeholders that get replaced by the build system.
+# Shellcheck should not analyze the raw template.
 
 # Determine workspace root. Prefer Bazel-provided path, then runfiles, then search upward.
 if [ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
@@ -40,6 +40,7 @@ echo "HELPER_PATH: $HELPER_PATH"
 echo "DEST_REL: $DEST_REL"
 
 SRC_PATHS=(
+# shellcheck disable=SC1083
 {src_paths}
 )
 

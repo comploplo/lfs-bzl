@@ -13,6 +13,7 @@ PHASE_DEFAULTS = {
         "destdir": "$LFS",
         "build_subdir": "build",
         "make_flags": ["-j$(nproc)"],
+        "skip_ownership_check": False,
     },
     # Chapter 6: temporary tools (installs into $LFS/usr)
     "ch6": {
@@ -20,6 +21,7 @@ PHASE_DEFAULTS = {
         "destdir": "$LFS",
         "build_subdir": "build",
         "make_flags": ["-j$(nproc)"],
+        "skip_ownership_check": False,
     },
     # Chapter 7+: inside chroot (installs into /usr)
     "ch7": {
@@ -27,6 +29,7 @@ PHASE_DEFAULTS = {
         "destdir": "/",
         "build_subdir": "build",
         "make_flags": ["-j$(nproc)"],
+        "skip_ownership_check": False,
     },
 }
 

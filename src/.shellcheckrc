@@ -1,0 +1,5 @@
+# Exclude sysroot directory (contains extracted tarballs)
+exclude-path=sysroot
+
+# Exclude template files (contain placeholders that aren't valid bash)
+exclude-path=tools/scripts/templates

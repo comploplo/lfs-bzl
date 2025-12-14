@@ -10,48 +10,56 @@ bazel_dep(name = "rules_shell", version = "0.2.0")
 # Chapter 3 source definitions (LFS 12.x System V)
 http_file(
     name = "binutils_src",
+    downloaded_file_path = "binutils-2.43.1.tar.xz",
     sha256 = "13f74202a3c4c51118b797a39ea4200d3f6cfbe224da6d1d95bb938480132dfd",
     urls = ["https://ftpmirror.gnu.org/binutils/binutils-2.43.1.tar.xz"],
 )
 
 http_file(
     name = "gcc_src",
+    downloaded_file_path = "gcc-14.2.0.tar.xz",
     sha256 = "a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9",
     urls = ["https://ftpmirror.gnu.org/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz"],
 )
 
 http_file(
     name = "gmp_src",
+    downloaded_file_path = "gmp-6.3.0.tar.xz",
     sha256 = "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
     urls = ["https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.xz"],
 )
 
 http_file(
     name = "mpfr_src",
+    downloaded_file_path = "mpfr-4.2.1.tar.xz",
     sha256 = "277807353a6726978996945af13e52829e3abd7a9a5b7fb2793894e18f1fcbb2",
     urls = ["https://ftpmirror.gnu.org/mpfr/mpfr-4.2.1.tar.xz"],
 )
 
 http_file(
     name = "mpc_src",
+    downloaded_file_path = "mpc-1.3.1.tar.gz",
     sha256 = "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8",
     urls = ["https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz"],
 )
 
 http_file(
     name = "linux_headers_src",
+    downloaded_file_path = "linux-6.10.5.tar.xz",
     sha256 = "30909eb2e0434dce97a93cd97ed0dfab7688a124bc3ebc3ecf6c776de09ccc0b",
     urls = ["https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.10.5.tar.xz"],
 )
 
 http_file(
     name = "glibc_src",
+    downloaded_file_path = "glibc-2.40.tar.xz",
     sha256 = "19a890175e9263d748f627993de6f4b1af9cd21e03f080e4bfb3a1fac10205a2",
     urls = ["https://ftpmirror.gnu.org/glibc/glibc-2.40.tar.xz"],
 )
 
 http_file(
     name = "libstdcpp_src",
+    downloaded_file_path = "gcc-14.2.0.tar.xz",
     sha256 = "a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9",
     urls = ["https://ftpmirror.gnu.org/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz"],
 )
@@ -59,98 +67,530 @@ http_file(
 # Early Chapter 6 tools used in Chapter 5/6 bootstrap (downloaded here for convenience)
 http_file(
     name = "m4_src",
+    downloaded_file_path = "m4-1.4.19.tar.xz",
     sha256 = "63aede5c6d33b6d9b13511cd0be2cac046f2e70fd0a07aa9573a04a82783af96",
     urls = ["https://ftpmirror.gnu.org/m4/m4-1.4.19.tar.xz"],
 )
 
 http_file(
     name = "ncurses_src",
+    downloaded_file_path = "ncurses-6.5.tar.gz",
     sha256 = "136d91bc269a9a5785e5f9e980bc76ab57428f604ce3e5a5a90cebc767971cc6",
     urls = ["https://ftpmirror.gnu.org/ncurses/ncurses-6.5.tar.gz"],
 )
 
 http_file(
     name = "bash_src",
+    downloaded_file_path = "bash-5.2.32.tar.gz",
     sha256 = "d3ef80d2b67d8cbbe4d3265c63a72c46f9b278ead6e0e06d61801b58f23f50b5",
     urls = ["https://ftpmirror.gnu.org/bash/bash-5.2.32.tar.gz"],
 )
 
 http_file(
     name = "coreutils_src",
+    downloaded_file_path = "coreutils-9.5.tar.xz",
     sha256 = "cd328edeac92f6a665de9f323c93b712af1858bc2e0d88f3f7100469470a1b8a",
     urls = ["https://ftpmirror.gnu.org/coreutils/coreutils-9.5.tar.xz"],
 )
 
 http_file(
     name = "diffutils_src",
+    downloaded_file_path = "diffutils-3.10.tar.xz",
     sha256 = "90e5e93cc724e4ebe12ede80df1634063c7a855692685919bfe60b556c9bd09e",
     urls = ["https://ftpmirror.gnu.org/diffutils/diffutils-3.10.tar.xz"],
 )
 
 http_file(
     name = "file_src",
+    downloaded_file_path = "file-5.45.tar.gz",
     sha256 = "fc97f51029bb0e2c9f4e3bffefdaf678f0e039ee872b9de5c002a6d09c784d82",
     urls = ["https://astron.com/pub/file/file-5.45.tar.gz"],
 )
 
 http_file(
     name = "findutils_src",
+    downloaded_file_path = "findutils-4.10.0.tar.xz",
     sha256 = "1387e0b67ff247d2abde998f90dfbf70c1491391a59ddfecb8ae698789f0a4f5",
     urls = ["https://ftpmirror.gnu.org/findutils/findutils-4.10.0.tar.xz"],
 )
 
 http_file(
     name = "gawk_src",
+    downloaded_file_path = "gawk-5.3.0.tar.xz",
     sha256 = "ca9c16d3d11d0ff8c69d79dc0b47267e1329a69b39b799895604ed447d3ca90b",
     urls = ["https://ftpmirror.gnu.org/gawk/gawk-5.3.0.tar.xz"],
 )
 
 http_file(
     name = "grep_src",
+    downloaded_file_path = "grep-3.11.tar.xz",
     sha256 = "1db2aedde89d0dea42b16d9528f894c8d15dae4e190b59aecc78f5a951276eab",
     urls = ["https://ftpmirror.gnu.org/grep/grep-3.11.tar.xz"],
 )
 
 http_file(
     name = "gzip_src",
+    downloaded_file_path = "gzip-1.13.tar.xz",
     sha256 = "7454eb6935db17c6655576c2e1b0fabefd38b4d0936e0f87f48cd062ce91a057",
     urls = ["https://ftpmirror.gnu.org/gzip/gzip-1.13.tar.xz"],
 )
 
 http_file(
     name = "make_src",
+    downloaded_file_path = "make-4.4.1.tar.gz",
     sha256 = "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
     urls = ["https://ftpmirror.gnu.org/make/make-4.4.1.tar.gz"],
 )
 
 http_file(
     name = "patch_src",
+    downloaded_file_path = "patch-2.7.6.tar.xz",
     sha256 = "ac610bda97abe0d9f6b7c963255a11dcb196c25e337c61f94e4778d632f1d8fd",
     urls = ["https://ftpmirror.gnu.org/patch/patch-2.7.6.tar.xz"],
 )
 
 http_file(
     name = "sed_src",
+    downloaded_file_path = "sed-4.9.tar.xz",
     sha256 = "6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181",
     urls = ["https://ftpmirror.gnu.org/sed/sed-4.9.tar.xz"],
 )
 
 http_file(
     name = "tar_src",
+    downloaded_file_path = "tar-1.35.tar.xz",
     sha256 = "4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16",
     urls = ["https://ftpmirror.gnu.org/tar/tar-1.35.tar.xz"],
 )
 
 http_file(
     name = "xz_src",
+    downloaded_file_path = "xz-5.6.2.tar.xz",
     sha256 = "a9db3bb3d64e248a0fae963f8fb6ba851a26ba1822e504dc0efd18a80c626caf",
     urls = ["https://tukaani.org/xz/xz-5.6.2.tar.xz"],
 )
 
 http_file(
     name = "readline_src",
+    downloaded_file_path = "readline-8.2.13.tar.gz",
     sha256 = "0e5be4d2937e8bd9b7cd60d46721ce79f88a33415dd68c2d738fb5924638f656",
     urls = ["https://ftpmirror.gnu.org/readline/readline-8.2.13.tar.gz"],
+)
+
+# Chapter 8 source definitions (Building the Final System)
+http_file(
+    name = "man_pages_src",
+    downloaded_file_path = "man-pages-6.9.1.tar.xz",
+    sha256 = "e23cbac29f110ba571f0da8523e79d373691466ed7f2a31301721817d34530bd",
+    urls = ["https://www.kernel.org/pub/linux/docs/man-pages/man-pages-6.9.1.tar.xz"],
+)
+
+http_file(
+    name = "iana_etc_src",
+    downloaded_file_path = "iana-etc-20240806.tar.gz",
+    sha256 = "672dbe1ba52b889a46dc07ee3876664ed601983239f82d729d02a002475a5b66",
+    urls = ["https://github.com/Mic92/iana-etc/releases/download/20240806/iana-etc-20240806.tar.gz"],
+)
+
+# TODO(chapter_08): Fill in sha256 checksums for the remaining Chapter 8 sources.
+# See `.planning/phases/01-research-infrastructure/INFRASTRUCTURE.md`.
+http_file(
+    name = "zlib_src",
+    downloaded_file_path = "zlib-1.3.1.tar.gz",
+    sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+    urls = ["https://zlib.net/fossils/zlib-1.3.1.tar.gz"],
+)
+
+http_file(
+    name = "bzip2_src",
+    downloaded_file_path = "bzip2-1.0.8.tar.gz",
+    sha256 = "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269",
+    urls = ["https://www.sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"],
+)
+
+http_file(
+    name = "lz4_src",
+    downloaded_file_path = "lz4-1.10.0.tar.gz",
+    sha256 = "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b",
+    urls = ["https://github.com/lz4/lz4/releases/download/v1.10.0/lz4-1.10.0.tar.gz"],
+)
+
+http_file(
+    name = "zstd_src",
+    downloaded_file_path = "zstd-1.5.6.tar.gz",
+    sha256 = "8c29e06cf42aacc1eafc4077ae2ec6c6fcb96a626157e0593d5e82a34fd403c1",
+    urls = ["https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz"],
+)
+
+http_file(
+    name = "bc_src",
+    downloaded_file_path = "bc-6.7.6.tar.xz",
+    sha256 = "828f390c2a552cadbc8c8ad5fde6eeaee398dc8d59d706559158330f3629ce35",
+    urls = ["https://github.com/gavinhoward/bc/releases/download/6.7.6/bc-6.7.6.tar.xz"],
+)
+
+http_file(
+    name = "flex_src",
+    downloaded_file_path = "flex-2.6.4.tar.gz",
+    sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995",
+    urls = ["https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz"],
+)
+
+http_file(
+    name = "tcl_src",
+    downloaded_file_path = "tcl8.6.14-src.tar.gz",
+    sha256 = "5880225babf7954c58d4fb0f5cf6279104ce1cd6aa9b71e9a6322540e1c4de66",
+    urls = ["https://downloads.sourceforge.net/tcl/tcl8.6.14-src.tar.gz"],
+)
+
+http_file(
+    name = "expect_src",
+    downloaded_file_path = "expect5.45.4.tar.gz",
+    sha256 = "49a7da83b0bdd9f46d04a04deec19c7767bb9a323e40c4781f89caf760b92c34",
+    urls = ["https://prdownloads.sourceforge.net/expect/expect5.45.4.tar.gz"],
+)
+
+http_file(
+    name = "dejagnu_src",
+    downloaded_file_path = "dejagnu-1.6.3.tar.gz",
+    sha256 = "87daefacd7958b4a69f88c6856dbd1634261963c414079d0c371f589cd66a2e3",
+    urls = ["https://ftpmirror.gnu.org/gnu/dejagnu/dejagnu-1.6.3.tar.gz"],
+)
+
+http_file(
+    name = "pkgconf_src",
+    downloaded_file_path = "pkgconf-2.3.0.tar.xz",
+    sha256 = "3a9080ac51d03615e7c1910a0a2a8df08424892b5f13b0628a204d3fcce0ea8b",
+    urls = ["https://distfiles.ariadne.space/pkgconf/pkgconf-2.3.0.tar.xz"],
+)
+
+http_file(
+    name = "attr_src",
+    downloaded_file_path = "attr-2.5.2.tar.gz",
+    sha256 = "39bf67452fa41d0948c2197601053f48b3d78a029389734332a6309a680c6c87",
+    urls = ["https://download.savannah.gnu.org/releases/attr/attr-2.5.2.tar.gz"],
+)
+
+http_file(
+    name = "acl_src",
+    downloaded_file_path = "acl-2.3.2.tar.xz",
+    sha256 = "97203a72cae99ab89a067fe2210c1cbf052bc492b479eca7d226d9830883b0bd",
+    urls = ["https://download.savannah.gnu.org/releases/acl/acl-2.3.2.tar.xz"],
+)
+
+http_file(
+    name = "libcap_src",
+    downloaded_file_path = "libcap-2.70.tar.xz",
+    sha256 = "23a6ef8aadaf1e3e875f633bb2d116cfef8952dba7bc7c569b13458e1952b30f",
+    urls = ["https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.70.tar.xz"],
+)
+
+http_file(
+    name = "libxcrypt_src",
+    downloaded_file_path = "libxcrypt-4.4.36.tar.xz",
+    sha256 = "e5e1f4caee0a01de2aee26e3138807d6d3ca2b8e67287966d1fefd65e1fd8943",
+    urls = ["https://github.com/besser82/libxcrypt/releases/download/v4.4.36/libxcrypt-4.4.36.tar.xz"],
+)
+
+http_file(
+    name = "shadow_src",
+    downloaded_file_path = "shadow-4.16.0.tar.xz",
+    sha256 = "b78e3921a95d53282a38e90628880624736bf6235e36eea50c50835f59a3530b",
+    urls = ["https://github.com/shadow-maint/shadow/releases/download/4.16.0/shadow-4.16.0.tar.xz"],
+)
+
+http_file(
+    name = "psmisc_src",
+    downloaded_file_path = "psmisc-23.7.tar.xz",
+    sha256 = "58c55d9c1402474065adae669511c191de374b0871eec781239ab400b907c327",
+    urls = ["https://sourceforge.net/projects/psmisc/files/psmisc/psmisc-23.7.tar.xz"],
+)
+
+http_file(
+    name = "libtool_src",
+    downloaded_file_path = "libtool-2.4.7.tar.xz",
+    sha256 = "4f7f217f057ce655ff22559ad221a0fd8ef84ad1fc5fcb6990cecc333aa1635d",
+    urls = ["https://ftp.gnu.org/gnu/libtool/libtool-2.4.7.tar.xz"],
+)
+
+http_file(
+    name = "gdbm_src",
+    downloaded_file_path = "gdbm-1.24.tar.gz",
+    sha256 = "695e9827fdf763513f133910bc7e6cfdb9187943a4fec943e57449723d2b8dbf",
+    urls = ["https://ftp.gnu.org/gnu/gdbm/gdbm-1.24.tar.gz"],
+)
+
+http_file(
+    name = "gperf_src",
+    downloaded_file_path = "gperf-3.1.tar.gz",
+    sha256 = "588546b945bba4b70b6a3a616e80b4ab466e3f33024a352fc2198112cdbb3ae2",
+    urls = ["https://ftp.gnu.org/gnu/gperf/gperf-3.1.tar.gz"],
+)
+
+http_file(
+    name = "expat_src",
+    downloaded_file_path = "expat-2.6.2.tar.xz",
+    sha256 = "ee14b4c5d8908b1bec37ad937607eab183d4d9806a08adee472c3c3121d27364",
+    urls = ["https://prdownloads.sourceforge.net/expat/expat-2.6.2.tar.xz"],
+)
+
+http_file(
+    name = "inetutils_src",
+    downloaded_file_path = "inetutils-2.5.tar.xz",
+    sha256 = "87697d60a31e10b5cb86a9f0651e1ec7bee98320d048c0739431aac3d5764fb6",
+    urls = ["https://ftp.gnu.org/gnu/inetutils/inetutils-2.5.tar.xz"],
+)
+
+http_file(
+    name = "less_src",
+    downloaded_file_path = "less-661.tar.gz",
+    sha256 = "2b5f0167216e3ef0ffcb0c31c374e287eb035e4e223d5dae315c2783b6e738ed",
+    urls = ["https://www.greenwoodsoftware.com/less/less-661.tar.gz"],
+)
+
+http_file(
+    name = "xml_parser_src",
+    downloaded_file_path = "XML-Parser-2.47.tar.gz",
+    sha256 = "ad4aae643ec784f489b956abe952432871a622d4e2b5c619e8855accbfc4d1d8",
+    urls = ["https://cpan.metacpan.org/authors/id/T/TO/TODDR/XML-Parser-2.47.tar.gz"],
+)
+
+http_file(
+    name = "intltool_src",
+    downloaded_file_path = "intltool-0.51.0.tar.gz",
+    sha256 = "67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd",
+    urls = ["https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz"],
+)
+
+http_file(
+    name = "autoconf_src",
+    downloaded_file_path = "autoconf-2.72.tar.xz",
+    sha256 = "ba885c1319578d6c94d46e9b0dceb4014caafe2490e437a0dbca3f270a223f5a",
+    urls = ["https://ftp.gnu.org/gnu/autoconf/autoconf-2.72.tar.xz"],
+)
+
+http_file(
+    name = "automake_src",
+    downloaded_file_path = "automake-1.17.tar.xz",
+    sha256 = "8920c1fc411e13b90bf704ef9db6f29d540e76d232cb3b2c9f4dc4cc599bd990",
+    urls = ["https://ftp.gnu.org/gnu/automake/automake-1.17.tar.xz"],
+)
+
+http_file(
+    name = "openssl_src",
+    downloaded_file_path = "openssl-3.3.1.tar.gz",
+    sha256 = "777cd596284c883375a2a7a11bf5d2786fc5413255efab20c50d6ffe6d020b7e",
+    urls = ["https://www.openssl.org/source/openssl-3.3.1.tar.gz"],
+)
+
+http_file(
+    name = "kmod_src",
+    downloaded_file_path = "kmod-33.tar.xz",
+    sha256 = "dc768b3155172091f56dc69430b5481f2d76ecd9ccb54ead8c2540dbcf5ea9bc",
+    urls = ["https://www.kernel.org/pub/linux/utils/kernel/kmod/kmod-33.tar.xz"],
+)
+
+http_file(
+    name = "libelf_src",
+    downloaded_file_path = "elfutils-0.191.tar.bz2",
+    sha256 = "df76db71366d1d708365fc7a6c60ca48398f14367eb2b8954efc8897147ad871",
+    urls = ["https://sourceware.org/ftp/elfutils/0.191/elfutils-0.191.tar.bz2"],
+)
+
+http_file(
+    name = "libffi_src",
+    downloaded_file_path = "libffi-3.4.6.tar.gz",
+    sha256 = "b0dea9df23c863a7a50e825440f3ebffabd65df1497108e5d437747843895a4e",
+    urls = ["https://github.com/libffi/libffi/releases/download/v3.4.6/libffi-3.4.6.tar.gz"],
+)
+
+http_file(
+    name = "flit_core_src",
+    downloaded_file_path = "flit_core-3.9.0.tar.gz",
+    sha256 = "72ad266176c4a3fcfab5f2930d76896059851240570ce9a98733b658cb786eba",
+    urls = ["https://pypi.org/packages/source/f/flit-core/flit_core-3.9.0.tar.gz"],
+)
+
+http_file(
+    name = "wheel_src",
+    downloaded_file_path = "wheel-0.44.0.tar.gz",
+    sha256 = "a29c3f2817e95ab89aa4660681ad547c0e9547f20e75b0562fe7723c9a2a9d49",
+    urls = ["https://pypi.org/packages/source/w/wheel/wheel-0.44.0.tar.gz"],
+)
+
+http_file(
+    name = "setuptools_src",
+    downloaded_file_path = "setuptools-72.2.0.tar.gz",
+    sha256 = "80aacbf633704e9c8bfa1d99fa5dd4dc59573efcf9e4042c13d3bcef91ac2ef9",
+    urls = ["https://pypi.org/packages/source/s/setuptools/setuptools-72.2.0.tar.gz"],
+)
+
+http_file(
+    name = "ninja_src",
+    downloaded_file_path = "ninja-1.12.1.tar.gz",
+    sha256 = "821bdff48a3f683bc4bb3b6f0b5fe7b2d647cf65d52aeb63328c91a6c6df285a",
+    urls = ["https://github.com/ninja-build/ninja/archive/v1.12.1/ninja-1.12.1.tar.gz"],
+)
+
+http_file(
+    name = "meson_src",
+    downloaded_file_path = "meson-1.5.1.tar.gz",
+    sha256 = "567e533adf255de73a2de35049b99923caf872a455af9ce03e01077e0d384bed",
+    urls = ["https://github.com/mesonbuild/meson/releases/download/1.5.1/meson-1.5.1.tar.gz"],
+)
+
+http_file(
+    name = "check_src",
+    downloaded_file_path = "check-0.15.2.tar.gz",
+    sha256 = "a8de4e0bacfb4d76dd1c618ded263523b53b85d92a146d8835eb1a52932fa20a",
+    urls = ["https://github.com/libcheck/check/releases/download/0.15.2/check-0.15.2.tar.gz"],
+)
+
+http_file(
+    name = "groff_src",
+    downloaded_file_path = "groff-1.23.0.tar.gz",
+    sha256 = "6b9757f592b7518b4902eb6af7e54570bdccba37a871fddb2d30ae3863511c13",
+    urls = ["https://ftp.gnu.org/gnu/groff/groff-1.23.0.tar.gz"],
+)
+
+http_file(
+    name = "grub_src",
+    downloaded_file_path = "grub-2.12.tar.xz",
+    sha256 = "f3c97391f7c4eaa677a78e090c7e97e6dc47b16f655f04683ebd37bef7fe0faa",
+    urls = ["https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz"],
+)
+
+http_file(
+    name = "iproute2_src",
+    downloaded_file_path = "iproute2-6.10.0.tar.xz",
+    sha256 = "91a62f82737b44905a00fa803369c447d549e914e9a2a4018fdd75b1d54e8dce",
+    urls = ["https://www.kernel.org/pub/linux/utils/net/iproute2/iproute2-6.10.0.tar.xz"],
+)
+
+http_file(
+    name = "kbd_src",
+    downloaded_file_path = "kbd-2.6.4.tar.xz",
+    sha256 = "519f8d087aecca7e0a33cd084bef92c066eb19731666653dcc70c9d71aa40926",
+    urls = ["https://www.kernel.org/pub/linux/utils/kbd/kbd-2.6.4.tar.xz"],
+)
+
+http_file(
+    name = "libpipeline_src",
+    downloaded_file_path = "libpipeline-1.5.7.tar.gz",
+    sha256 = "b8b45194989022a79ec1317f64a2a75b1551b2a55bea06f67704cb2a2e4690b0",
+    urls = ["https://download.savannah.gnu.org/releases/libpipeline/libpipeline-1.5.7.tar.gz"],
+)
+
+http_file(
+    name = "vim_src",
+    downloaded_file_path = "vim-9.1.0660.tar.gz",
+    sha256 = "cf7d5c1fbde84357a355c1ad20118c8947d5e1684e71a673549f1e9635f9bfe7",
+    urls = ["https://github.com/vim/vim/archive/v9.1.0660/vim-9.1.0660.tar.gz"],
+)
+
+http_file(
+    name = "markupsafe_src",
+    downloaded_file_path = "MarkupSafe-2.1.5.tar.gz",
+    sha256 = "d283d37a890ba4c1ae73ffadf8046435c76e7bc2247bbb63c00bd1a709c6544b",
+    urls = ["https://pypi.org/packages/source/M/MarkupSafe/MarkupSafe-2.1.5.tar.gz"],
+)
+
+http_file(
+    name = "jinja2_src",
+    downloaded_file_path = "jinja2-3.1.4.tar.gz",
+    sha256 = "4a3aee7acbbe7303aede8e9648d13b8bf88a429282aa6122a993f0ac800cb369",
+    urls = ["https://pypi.org/packages/source/J/Jinja2/jinja2-3.1.4.tar.gz"],
+)
+
+http_file(
+    name = "systemd_src",
+    downloaded_file_path = "systemd-256.4.tar.gz",
+    sha256 = "7861d544190f938cac1b242624d78c96fe2ebbc7b72f86166e88b50451c6fa58",
+    urls = ["https://github.com/systemd/systemd/archive/v256.4/systemd-256.4.tar.gz"],
+)
+
+http_file(
+    name = "dbus_src",
+    downloaded_file_path = "dbus-1.14.10.tar.xz",
+    sha256 = "ba1f21d2bd9d339da2d4aa8780c09df32fea87998b73da24f49ab9df1e36a50f",
+    urls = ["https://dbus.freedesktop.org/releases/dbus/dbus-1.14.10.tar.xz"],
+)
+
+http_file(
+    name = "man_db_src",
+    downloaded_file_path = "man-db-2.12.1.tar.xz",
+    sha256 = "ddee249daeb78cf92bab794ccd069cc8b575992265ea20e239e887156e880265",
+    urls = ["https://download.savannah.gnu.org/releases/man-db/man-db-2.12.1.tar.xz"],
+)
+
+http_file(
+    name = "procps_ng_src",
+    downloaded_file_path = "procps-ng-4.0.4.tar.xz",
+    sha256 = "22870d6feb2478adb617ce4f09a787addaf2d260c5a8aa7b17d889a962c5e42e",
+    urls = ["https://sourceforge.net/projects/procps-ng/files/Production/procps-ng-4.0.4.tar.xz"],
+)
+
+http_file(
+    name = "e2fsprogs_src",
+    downloaded_file_path = "e2fsprogs-1.47.1.tar.gz",
+    sha256 = "9afcd201f39429d2db2492aeb13dba5e75d6cc50682b732dca35643bd5f092e3",
+    urls = ["https://downloads.sourceforge.net/project/e2fsprogs/e2fsprogs/v1.47.1/e2fsprogs-1.47.1.tar.gz"],
+)
+
+http_file(
+    name = "sysklogd_src",
+    downloaded_file_path = "sysklogd-2.6.1.tar.gz",
+    sha256 = "e35d5c5f55019976302ac9818890bd6b6858db257506f0e9afaa718a8dee9cc3",
+    urls = ["https://github.com/troglobit/sysklogd/releases/download/v2.6.1/sysklogd-2.6.1.tar.gz"],
+)
+
+# glibc_src already defined above for Chapter 5/6 (same version 2.40)
+# Chapter 8 will reuse @glibc_src//file
+
+###############################################################################
+# Chapter 8 Patches (LFS 12.2)
+###############################################################################
+
+http_file(
+    name = "glibc_fhs_patch",
+    downloaded_file_path = "glibc-2.40-fhs-1.patch",
+    sha256 = "643552db030e2f2d7ffde4f558e0f5f83d3fabf34a2e0e56ebdb49750ac27b0d",
+    urls = ["https://www.linuxfromscratch.org/patches/lfs/12.2/glibc-2.40-fhs-1.patch"],
+)
+
+http_file(
+    name = "bzip2_docs_patch",
+    downloaded_file_path = "bzip2-1.0.8-install_docs-1.patch",
+    sha256 = "35e3bbd9642af51fef2a8a83afba040d272da42d7e3a251d8e43255a7b496702",
+    urls = ["https://www.linuxfromscratch.org/patches/lfs/12.2/bzip2-1.0.8-install_docs-1.patch"],
+)
+
+http_file(
+    name = "expect_gcc14_patch",
+    downloaded_file_path = "expect-5.45.4-gcc14-1.patch",
+    sha256 = "517c0cdd5db949cdd99dfa38b7a6c3945e1524c50e3467028973298f2c76a92c",
+    urls = ["https://www.linuxfromscratch.org/patches/lfs/12.2/expect-5.45.4-gcc14-1.patch"],
+)
+
+http_file(
+    name = "coreutils_i18n_patch",
+    downloaded_file_path = "coreutils-9.5-i18n-2.patch",
+    sha256 = "99f1553ce9b7ded634bb56dac14ba6e439fc124daf8da436ee4cda1fd286f4a2",
+    urls = ["https://www.linuxfromscratch.org/patches/lfs/12.2/coreutils-9.5-i18n-2.patch"],
+)
+
+http_file(
+    name = "kbd_backspace_patch",
+    downloaded_file_path = "kbd-2.6.4-backspace-1.patch",
+    sha256 = "8be28dcb11420624a500f2ea4fe975f771174bffee50e54ec8cd295a2dec104e",
+    urls = ["https://www.linuxfromscratch.org/patches/lfs/12.2/kbd-2.6.4-backspace-1.patch"],
+)
+
+http_file(
+    name = "sysvinit_consolidated_patch",
+    downloaded_file_path = "sysvinit-3.10-consolidated-1.patch",
+    sha256 = "6722ece9f83bcbaa7d486d5cf4ef76d3e64d18d33e7318d11866bba9c8cbc131",
+    urls = ["https://www.linuxfromscratch.org/patches/lfs/12.2/sysvinit-3.10-consolidated-1.patch"],
 )
 
 # Chapter 7 sources

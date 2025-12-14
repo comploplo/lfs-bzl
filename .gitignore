@@ -5,6 +5,10 @@ bazel-*
 # Build sysroot and logs (generated)
 src/sysroot/
 
+# Planning artifacts (local only)
+.planning/
+CLAUDE.md
+
 # Python cache
 **/__pycache__/
 *.py[co]

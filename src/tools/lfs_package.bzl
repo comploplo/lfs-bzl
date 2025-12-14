@@ -144,6 +144,7 @@ echo "Installing {name} to $LFS"...
             "{label}": str(ctx.label),
             "{name}": ctx.label.name,
             "{sysroot_path}": sysroot_path,
+            "{skip_ownership_check}": "1" if ctx.attr.skip_ownership_check else "0",
             "{toolchain_exports}": (toolchain_env + "\n") if toolchain_env else "",
             "{extra_env}": (extra_env + "\n") if extra_env else "",
             "{src_handling}": src_handling,
@@ -281,6 +282,14 @@ lfs_package = rule(
         ),
         "create_runner": attr.bool(
             doc = "Set True to emit a runner script (uses label name unless binary_name is provided)",
+            default = False,
+        ),
+        "phase": attr.string(
+            doc = "Optional metadata describing the package phase (for documentation only)",
+            default = "",
+        ),
+        "skip_ownership_check": attr.bool(
+            doc = "Skip sysroot ownership check (for chroot builds running as root)",
             default = False,
         ),
         "_runner_template": attr.label(
