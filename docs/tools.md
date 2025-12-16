@@ -15,6 +15,7 @@ This directory implements the "bridge" between Bazel's dependency management and
   - [lfs_c_binary](#lfs_c_binary-macro)
   - [lfs_configure_make](#lfs_configure_make-macro)
   - [lfs_autotools / lfs_plain_make](#lfs_autotools--lfs_plain_make-macros)
+  - [lfs_script](#lfs_script-macro)
 - [Chroot Builds (Podman Worker)](#chroot-builds-podman-worker)
 - [Environment Variables](#environment-variables-reference)
 - [Examples](#file-layout-in-build-files)
@@ -394,6 +395,36 @@ lfs_autotools(
         "--enable-gprofng=no",
         "--disable-werror",
     ],
+)
+```
+
+______________________________________________________________________
+
+### `lfs_script` (Macro)
+
+A wrapper around `lfs_package` designed for executing arbitrary scripts in the LFS environment (e.g., for configuration, file creation, or cleanup).
+
+**Arguments**
+
+- `name` (string, required)
+- `script` (string, required): The script content to execute.
+- `srcs` (label_list, optional): Source files available to the script.
+- `phase` (string, optional, default `"chroot"`): Build phase.
+- `deps` (label_list, optional): Dependencies.
+- `**kwargs`: Forwarded to `lfs_package`.
+
+**Example**
+
+```python
+load("//tools:lfs_script.bzl", "lfs_script")
+
+lfs_script(
+    name = "create_hosts",
+    script = """
+        cat > /etc/hosts << "EOF"
+127.0.0.1 localhost
+EOF
+    """,
 )
 ```
 

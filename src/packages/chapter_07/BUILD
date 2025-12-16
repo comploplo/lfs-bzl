@@ -14,6 +14,7 @@ This chapter builds 6 packages:
 """
 
 load("//tools:lfs_package.bzl", "lfs_package")
+load("//tools:lfs_script.bzl", "lfs_script")
 load("//tools:lfs_toolchain.bzl", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
@@ -23,11 +24,9 @@ package(default_visibility = ["//visibility:public"])
 # --------------------------------------------------------------------------- #
 
 # Create directory structure inside chroot
-lfs_package(
+lfs_script(
     name = "chroot_create_dirs",
-    build_cmd = "true",
-    configure_cmd = "true",
-    install_cmd = """
+    script = """
         # Matches docs/lfs-book/chapter07/creatingdirs.xml (System V)
 
         # Create essential symlinks (/bin -> /usr/bin, etc.)
@@ -57,16 +56,13 @@ lfs_package(
         install -dv -m 0750 /root
         install -dv -m 1777 /tmp /var/tmp
     """,
-    phase = "chroot",
     deps = ["//packages/chapter_06:all_temp_tools"],
 )
 
 # Seed essential files (/etc/passwd, /etc/group, etc.)
-lfs_package(
+lfs_script(
     name = "chroot_seed_files",
-    build_cmd = "true",
-    configure_cmd = "true",
-    install_cmd = """
+    script = """
         # Matches docs/lfs-book/chapter07/createfiles.xml (System V)
 
         # Create shell symlinks (needed by configure scripts and build tools)
@@ -142,7 +138,6 @@ EOF
         chmod -v 664 /var/log/lastlog
         chmod -v 600 /var/log/btmp
     """,
-    phase = "chroot",
     deps = [
         ":chroot_create_dirs",
         "//packages/chapter_06:all_temp_tools",
@@ -150,14 +145,11 @@ EOF
 )
 
 # Cleanup temporary files before building packages
-lfs_package(
+lfs_script(
     name = "chroot_cleanup_tmp",
-    build_cmd = "true",
-    configure_cmd = "true",
-    install_cmd = """
+    script = """
         rm -rf /tmp/* /var/tmp/*
     """,
-    phase = "chroot",
     deps = [
         ":chroot_seed_files",
         "//packages/chapter_06:all_temp_tools",
@@ -322,11 +314,9 @@ filegroup(
 )
 
 # Chapter 7.14 cleanup (optional but recommended)
-lfs_package(
+lfs_script(
     name = "chroot_cleanup",
-    build_cmd = "true",
-    configure_cmd = "true",
-    install_cmd = """
+    script = """
         # Remove libtool archive files
         find /usr/{lib,libexec} -name '*.la' -delete
         # Remove Chapter 6 tools directory if it exists
@@ -336,7 +326,6 @@ lfs_package(
         # Note: Skipping /usr/share/{info,man,doc} cleanup due to
         # permission issues with some man pages even when running as root
     """,
-    phase = "chroot",
     deps = [":chroot_toolchain_phase"],
 )
 
@@ -349,9 +338,9 @@ filegroup(
 )
 
 # Quick validation of core Chapter 7 toolchain inside chroot
-lfs_package(
+lfs_script(
     name = "chroot_smoke_versions",
-    build_cmd = """
+    script = """
         bison --version | head -1
         msgfmt --version | head -1
         perl -V:version
@@ -359,8 +348,5 @@ lfs_package(
         info --version | head -1
         lsblk --version | head -1
     """,
-    configure_cmd = "true",
-    install_cmd = "true",
-    phase = "chroot",
     deps = [":chroot_toolchain_phase"],
 )

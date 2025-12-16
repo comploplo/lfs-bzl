@@ -25,6 +25,7 @@ lfs-bzl/
 │   │   ├── chapter_06/     # Temporary tools (17 packages)
 │   │   ├── chapter_07/     # Chroot preparation (6 packages)
 │   │   ├── chapter_08/     # Final system (79 packages) 🎉
+│   │   ├── chapter_09/     # System configuration (6 packages)
 │   │   └── hello_world/    # Toolchain validation tests
 │   ├── tools/              # Custom Bazel rules (lfs_build.bzl, etc.)
 │   ├── sysroot/            # 🎯 Build artifacts (your LFS system!)
@@ -64,6 +65,9 @@ bazel build //packages/chapter_07:chroot_toolchain_phase
 
 # 5️⃣ Build Chapter 8 final system (79 packages - rootless Podman worker)
 bazel build //packages/chapter_08:ch8_all
+
+# 6️⃣ Configure System (Chapter 9)
+bazel build //packages/chapter_09:chapter_09
 
 # 🧪 Validate each toolchain stage:
 bazel build //packages/hello_world:hello_cross  # Cross Toolchain (Ch 5) ✅
@@ -181,7 +185,8 @@ Current implementation status:
 - ✅ **Chapter 6:** Temporary tools (17 packages) - Native host builds
 - ✅ **Chapter 7:** Chroot base system (6 packages) - Rootless Podman worker
 - ✅ **Chapter 8:** Final system (79 packages) - Rootless Podman worker
-- ⏳ **Chapter 9-11:** Configuration, kernel, bootloader (planned)
+- ✅ **Chapter 9:** System Configuration (Systemd, Network, Shells)
+- ⏳ **Chapter 10-11:** Kernel, bootloader (planned)
 
 **Design Decisions:**
 
