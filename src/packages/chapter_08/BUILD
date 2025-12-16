@@ -1,222 +1,123 @@
 """
 Chapter 8: Building the Final System
 
-Builds the final system packages inside the chroot environment.
-All packages use the temporary tools from Chapter 6/7.
-
 This chapter builds ~80 packages in phases:
-- Phase 2: Core Foundation (~17 packages)
-- Phase 3: Toolchain & Security (~16 packages)
-- Phase 4: Build System & Python (~24 packages)
-- Phase 5: System Services (~20 packages)
-- Phase 6: Final Packages & Cleanup (~3 packages)
+- Phase 2: Core Foundation (17 packages)
+- Phase 3: Toolchain & Security (16 packages)
+- Phase 4: Build System & Python (24 packages)
+- Phase 5: System Services (20 packages)
+- Phase 6: Final Packages (2 packages)
+
+Critical path: glibc -> binutils -> gcc -> everything else
+Test dependencies: gcc and coreutils tests require :shadow (for tester user)
 """
 
-load("//tools:lfs_build.bzl", "lfs_toolchain")
-load("//tools:lfs_chroot.bzl", "lfs_chroot_extract_tarball", "lfs_chroot_step", "lfs_sysroot_stage_files")
+load("//tools:lfs_build.bzl", "lfs_configure_make", "lfs_package", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
 ###############################################################################
-# Source Staging - Stage all Chapter 8 sources into /sources
+# Toolchain Definition
 ###############################################################################
 
-lfs_sysroot_stage_files(
-    name = "stage_ch8_sources",
-    srcs = [
-        # Phase 2: Core Foundation (17 packages)
-        "@man_pages_src//file",
-        "@iana_etc_src//file",
-        "@glibc_src//file",
-        "@glibc_fhs_patch//file",
-        "@zlib_src//file",
-        "@bzip2_src//file",
-        "@bzip2_docs_patch//file",
-        "@xz_src//file",
-        "@lz4_src//file",
-        "@zstd_src//file",
-        "@file_src//file",
-        "@readline_src//file",
-        "@m4_src//file",
-        "@bc_src//file",
-        "@flex_src//file",
-        "@tcl_src//file",
-        "@expect_src//file",
-        "@expect_gcc14_patch//file",
-        "@dejagnu_src//file",
-        "@pkgconf_src//file",
-
-        # Phase 3: Toolchain & Security (16 packages)
-        "@binutils_src//file",
-        "@gmp_src//file",
-        "@mpfr_src//file",
-        "@mpc_src//file",
-        "@attr_src//file",
-        "@acl_src//file",
-        "@libcap_src//file",
-        "@libxcrypt_src//file",
-        "@shadow_src//file",
-        "@gcc_src//file",
-        "@ncurses_src//file",
-        "@sed_src//file",
-        "@psmisc_src//file",
-        "@gettext_src//file",
-        "@bison_src//file",
-        "@grep_src//file",
-
-        # Phase 4: Build System & Python (24 packages)
-        "@bash_src//file",
-        "@libtool_src//file",
-        "@gdbm_src//file",
-        "@gperf_src//file",
-        "@expat_src//file",
-        "@inetutils_src//file",
-        "@less_src//file",
-        "@perl_src//file",
-        "@xml_parser_src//file",
-        "@intltool_src//file",
-        "@autoconf_src//file",
-        "@automake_src//file",
-        "@openssl_src//file",
-        "@kmod_src//file",
-        "@libelf_src//file",
-        "@libffi_src//file",
-        "@python_src//file",
-        "@flit_core_src//file",
-        "@wheel_src//file",
-        "@setuptools_src//file",
-        "@ninja_src//file",
-        "@meson_src//file",
-        "@coreutils_src//file",
-        "@coreutils_i18n_patch//file",
-        "@check_src//file",
-
-        # Phase 5: System Services (18 packages - skipping systemd/dbus)
-        "@diffutils_src//file",
-        "@gawk_src//file",
-        "@findutils_src//file",
-        "@groff_src//file",
-        "@grub_src//file",
-        "@gzip_src//file",
-        "@iproute2_src//file",
-        "@kbd_src//file",
-        "@kbd_backspace_patch//file",
-        "@libpipeline_src//file",
-        "@make_src//file",
-        "@patch_src//file",
-        "@tar_src//file",
-        "@texinfo_src//file",
-        "@vim_src//file",
-        "@markupsafe_src//file",
-        "@jinja2_src//file",
-        "@man_db_src//file",
-        "@procps_ng_src//file",
-
-        # Phase 6: Final Packages (3 packages)
-        "@util_linux_src//file",
-        "@e2fsprogs_src//file",
-        "@sysklogd_src//file",
-    ],
-    dest_rel = "sources",
-    lfs_sysroot = "//:lfs_sysroot_files",
-    tags = ["requires-sudo"],
-    deps = [],  # Chapter 7 already built, sysroot ready
+lfs_toolchain(
+    name = "toolchain",
+    bin_path = "/usr/bin:/usr/sbin:/bin:/sbin",
+    env = {
+        "CC": "gcc",
+        "CXX": "g++",
+    },
+    deps = [":gcc"],
 )
 
 ###############################################################################
-# PHASE 2: Core Foundation Packages (17 packages)
+# PHASE 2: Core Foundation (17 packages)
 ###############################################################################
 
-# 8.3 Man-pages - Linux manual pages (data only)
-lfs_chroot_extract_tarball(
-    name = "extract_man_pages",
-    tarball_name = "man-pages-6.9.1.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 1. Man-pages - Data files only
+lfs_package(
     name = "man_pages",
-    cmd = """
-set -euo pipefail
-cd /sources/man-pages-6.9.1
-make prefix=/usr install
-rm -v /usr/share/man/man3/crypt*
-""",
-    deps = [":extract_man_pages"],
+    srcs = ["@man_pages_src//file"],
+    build_cmd = "true",
+    configure_cmd = "rm -v man3/crypt*",
+    install_cmd = "make prefix=/usr install",
+    phase = "chroot",
 )
 
-# 8.4 Iana-Etc - Network protocol data (data only)
-lfs_chroot_extract_tarball(
-    name = "extract_iana_etc",
-    tarball_name = "iana-etc-20240806.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 2. Iana-Etc - Data files only
+lfs_package(
     name = "iana_etc",
-    cmd = """
-set -euo pipefail
-cd /sources/iana-etc-20240806
-cp services protocols /etc
-""",
-    deps = [":extract_iana_etc"],
+    srcs = ["@iana_etc_src//file"],
+    build_cmd = "true",
+    configure_cmd = "true",
+    install_cmd = "cp services protocols /etc",
+    phase = "chroot",
 )
 
-# 8.5 Glibc - C library (CRITICAL - test suite available: make check)
-# Note: This is a complex multi-step build with locale generation
-lfs_chroot_extract_tarball(
-    name = "extract_glibc",
-    tarball_name = "glibc-2.40.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 3. Glibc - C library (CRITICAL - requires tests)
+# Expected test failures: io/tst-lchmod (chroot), nss/tst-nss-files-hosts-multi (timeout)
+lfs_package(
     name = "glibc",
-    cmd = """
-set -euo pipefail
-cd /sources/glibc-2.40
+    srcs = ["@glibc_src//file"],
+    build_cmd = "cd build && make",
+    configure_cmd = """
+        patch -Np1 -i ../glibc-*-fhs-*.patch
+        mkdir -v build
+        cd build
+        echo "rootsbindir=/usr/sbin" > configparms
+        ../configure --prefix=/usr \\
+            --disable-werror \\
+            --enable-kernel=4.19 \\
+            --enable-stack-protector=strong \\
+            --disable-nscd \\
+            libc_cv_slibdir=/usr/lib
+    """,
+    install_cmd = """
+        cd build
+        touch /etc/ld.so.conf
+        sed '/test-installation/s@$(PERL)@echo not running@' -i ../Makefile
+        make install
+        sed '/RTLDLIST=/s@/usr@@g' -i /usr/bin/ldd
 
-# Apply FHS patch
-patch -Np1 -i ../glibc-2.40-fhs-1.patch
+        # Install locales (minimal set for testing)
+        localedef -i C -f UTF-8 C.UTF-8
+        localedef -i cs_CZ -f UTF-8 cs_CZ.UTF-8
+        localedef -i de_DE -f ISO-8859-1 de_DE
+        localedef -i de_DE@euro -f ISO-8859-15 de_DE@euro
+        localedef -i de_DE -f UTF-8 de_DE.UTF-8
+        localedef -i el_GR -f ISO-8859-7 el_GR
+        localedef -i en_GB -f ISO-8859-1 en_GB
+        localedef -i en_GB -f UTF-8 en_GB.UTF-8
+        localedef -i en_HK -f ISO-8859-1 en_HK
+        localedef -i en_PH -f ISO-8859-1 en_PH
+        localedef -i en_US -f ISO-8859-1 en_US
+        localedef -i en_US -f UTF-8 en_US.UTF-8
+        localedef -i es_ES -f ISO-8859-15 es_ES@euro
+        localedef -i es_MX -f ISO-8859-1 es_MX
+        localedef -i fa_IR -f UTF-8 fa_IR
+        localedef -i fr_FR -f ISO-8859-1 fr_FR
+        localedef -i fr_FR@euro -f ISO-8859-15 fr_FR@euro
+        localedef -i fr_FR -f UTF-8 fr_FR.UTF-8
+        localedef -i is_IS -f ISO-8859-1 is_IS
+        localedef -i is_IS -f UTF-8 is_IS.UTF-8
+        localedef -i it_IT -f ISO-8859-1 it_IT
+        localedef -i it_IT -f ISO-8859-15 it_IT@euro
+        localedef -i it_IT -f UTF-8 it_IT.UTF-8
+        localedef -i ja_JP -f EUC-JP ja_JP
+        localedef -i ja_JP -f SHIFT_JIS ja_JP.SJIS 2> /dev/null || true
+        localedef -i ja_JP -f UTF-8 ja_JP.UTF-8
+        localedef -i nl_NL@euro -f ISO-8859-15 nl_NL@euro
+        localedef -i ru_RU -f KOI8-R ru_RU.KOI8-R
+        localedef -i ru_RU -f UTF-8 ru_RU.UTF-8
+        localedef -i se_NO -f UTF-8 se_NO.UTF-8
+        localedef -i ta_IN -f UTF-8 ta_IN.UTF-8
+        localedef -i tr_TR -f UTF-8 tr_TR.UTF-8
+        localedef -i zh_CN -f GB18030 zh_CN.GB18030
+        localedef -i zh_HK -f BIG5-HKSCS zh_HK.BIG5-HKSCS
+        localedef -i zh_TW -f UTF-8 zh_TW.UTF-8
 
-# Create build directory
-mkdir -v build
-cd build
-
-# Configure ldconfig and sln utilities
-echo "rootsbindir=/usr/sbin" > configparms
-
-# Configure glibc
-../configure --prefix=/usr \\
-             --disable-werror \\
-             --enable-kernel=4.19 \\
-             --enable-stack-protector=strong \\
-             --disable-nscd \\
-             libc_cv_slibdir=/usr/lib
-
-# Build
-make
-
-# Install
-# Create ld.so.conf to prevent warning
-touch /etc/ld.so.conf
-
-# Skip outdated sanity check
-sed '/test-installation/s@$(PERL)@echo not running@' -i ../Makefile
-
-# Install glibc
-make install
-
-# Fix hardcoded path in ldd script
-sed '/RTLDLIST=/s@/usr@@g' -i /usr/bin/ldd
-
-# Install locale configuration
-mkdir -pv /usr/lib/locale
-localedef -i C -f UTF-8 C.UTF-8
-localedef -i en_US -f UTF-8 en_US.UTF-8
-
-# Create nsswitch.conf
-cat > /etc/nsswitch.conf << "EOF"
+        # Configure nsswitch.conf
+        cat > /etc/nsswitch.conf << "EOF"
 # Begin /etc/nsswitch.conf
 
 passwd: files
@@ -234,990 +135,595 @@ rpc: files
 # End /etc/nsswitch.conf
 EOF
 
-# Create /etc/ld.so.conf
-cat > /etc/ld.so.conf << "EOF"
+        # Install timezone data
+        tar -xf ../../tzdata*.tar.gz
+        ZONEINFO=/usr/share/zoneinfo
+        mkdir -pv $ZONEINFO/{posix,right}
+        for tz in etcetera southamerica northamerica europe africa antarctica asia australasia backward; do
+            zic -L /dev/null   -d $ZONEINFO       ${tz}
+            zic -L /dev/null   -d $ZONEINFO/posix ${tz}
+            zic -L leapseconds -d $ZONEINFO/right ${tz}
+        done
+        cp -v zone.tab zone1970.tab iso3166.tab $ZONEINFO
+        zic -d $ZONEINFO -p America/New_York
+        unset ZONEINFO
+
+        ln -sfv /usr/share/zoneinfo/UTC /etc/localtime
+
+        # Configure dynamic loader
+        cat > /etc/ld.so.conf << "EOF"
 # Begin /etc/ld.so.conf
 /usr/local/lib
 /opt/lib
-
 EOF
-
-# Create /etc/ld.so.conf.d directory
-cat >> /etc/ld.so.conf << "EOF"
-# Add an include directory
-include /etc/ld.so.conf.d/*.conf
-
-EOF
-mkdir -pv /etc/ld.so.conf.d
-""",
-    deps = [":extract_glibc"],
+    """,
+    patches = ["@glibc_fhs_patch//file"],
+    phase = "chroot",
+    test_cmd = "cd build && make check",
+    deps = ["@tzdata_src//file"],
 )
 
-# 8.8 Zlib - Compression library (test suite: make check)
-# Note: Zlib uses custom configure script (not autoconf)
-lfs_chroot_extract_tarball(
-    name = "extract_zlib",
-    tarball_name = "zlib-1.3.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 4. Zlib - Compression library
+lfs_package(
     name = "zlib",
-    cmd = """
-set -euo pipefail
-cd /sources/zlib-1.3.1
-
-# Configure (custom configure script, not autoconf)
-./configure --prefix=/usr
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-
-# Remove static library
-rm -fv /usr/lib/libz.a
-""",
-    deps = [
-        ":extract_zlib",
-        ":glibc",
-    ],
+    srcs = ["@zlib_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = """
+        make install
+        rm -fv /usr/lib/libz.a
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.9 Bzip2 - Compression library (complex custom Makefile)
-lfs_chroot_extract_tarball(
-    name = "extract_bzip2",
-    tarball_name = "bzip2-1.0.8.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 5. Bzip2 - Compression library
+lfs_package(
     name = "bzip2",
-    cmd = """
-set -euo pipefail
-cd /sources/bzip2-1.0.8
-
-# Apply documentation patch
-patch -Np1 -i ../bzip2-1.0.8-install_docs-1.patch
-
-# Fix symlinks to be relative
-sed -i 's@\\(ln -s -f \\)$(PREFIX)/bin/@\\1@' Makefile
-
-# Fix man page location
-sed -i "s@(PREFIX)/man@(PREFIX)/share/man@g" Makefile
-
-# Build shared library first
-make -f Makefile-libbz2_so
-make clean
-
-# Build static library and utilities
-make -j$(nproc)
-
-# Install
-make PREFIX=/usr install
-
-# Install shared library
-cp -av libbz2.so.* /usr/lib
-ln -sv libbz2.so.1.0.8 /usr/lib/libbz2.so
-
-# Install shared bzip2 binary
-cp -v bzip2-shared /usr/bin/bzip2
-
-# Create symlinks
-for i in /usr/bin/{bzcat,bunzip2}; do
-    ln -sfv bzip2 $i
-done
-
-# Remove static library
-rm -fv /usr/lib/libbz2.a
-""",
-    deps = [
-        ":extract_bzip2",
-        ":glibc",
-    ],
+    srcs = ["@bzip2_src//file"],
+    build_cmd = """
+        make -f Makefile-libbz2_so
+        make clean
+        make
+    """,
+    configure_cmd = """
+        patch -Np1 -i ../bzip2-*-install_docs-*.patch
+        sed -i 's@\\(ln -s -f \\)$(PREFIX)/bin/@\\1@' Makefile
+        sed -i "s@(PREFIX)/man@(PREFIX)/share/man@g" Makefile
+    """,
+    install_cmd = """
+        make PREFIX=/usr install
+        cp -av libbz2.so.* /usr/lib
+        ln -sv libbz2.so.1.0.8 /usr/lib/libbz2.so
+        cp -v bzip2-shared /usr/bin/bzip2
+        for i in /usr/bin/{bzcat,bunzip2}; do
+            ln -sfv bzip2 $i
+        done
+        rm -fv /usr/lib/libbz2.a
+    """,
+    patches = ["@bzip2_docs_patch//file"],
+    phase = "chroot",
+    deps = [":glibc"],
 )
 
-# 8.10 Xz - Compression library (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_xz",
-    tarball_name = "xz-5.6.2.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 6. Xz - Compression library
+lfs_configure_make(
     name = "xz",
-    cmd = """
-set -euo pipefail
-cd /sources/xz-5.6.2
-
-# Configure
-./configure --prefix=/usr \\
-            --disable-static \\
-            --docdir=/usr/share/doc/xz-5.6.2
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
-    deps = [
-        ":extract_xz",
-        ":glibc",
+    srcs = ["@xz_src//file"],
+    configure_flags = [
+        "--prefix=/usr",
+        "--disable-static",
+        "--docdir=/usr/share/doc/xz-5.6.2",
     ],
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.11 Lz4 - Compression library (make-based)
-lfs_chroot_extract_tarball(
-    name = "extract_lz4",
-    tarball_name = "lz4-1.10.0.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 7. Lz4 - Fast compression library
+lfs_package(
     name = "lz4",
-    cmd = """
-set -euo pipefail
-cd /sources/lz4-1.10.0
-
-# Build
-make -j$(nproc) BUILD_STATIC=no PREFIX=/usr
-
-# Install
-make BUILD_STATIC=no PREFIX=/usr install
-""",
-    deps = [
-        ":extract_lz4",
-        ":glibc",
-    ],
+    srcs = ["@lz4_src//file"],
+    build_cmd = "make BUILD_STATIC=no PREFIX=/usr",
+    configure_cmd = "true",
+    install_cmd = "make BUILD_STATIC=no PREFIX=/usr install",
+    phase = "chroot",
+    test_cmd = "make -j1 check",
+    deps = [":glibc"],
 )
 
-# 8.12 Zstd - Compression library (make-based, test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_zstd",
-    tarball_name = "zstd-1.5.6.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 8. Zstd - Compression library
+lfs_package(
     name = "zstd",
-    cmd = """
-set -euo pipefail
-cd /sources/zstd-1.5.6
-
-# Build
-make -j$(nproc) prefix=/usr
-
-# Install
-make prefix=/usr install
-
-# Remove static library
-rm -v /usr/lib/libzstd.a
-""",
-    deps = [
-        ":extract_zstd",
-        ":glibc",
-    ],
+    srcs = ["@zstd_src//file"],
+    build_cmd = "make prefix=/usr",
+    configure_cmd = "true",
+    install_cmd = """
+        make prefix=/usr install
+        rm -v /usr/lib/libzstd.a
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.13 File - File type identification (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_file",
-    tarball_name = "file-5.45.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 9. File - File type detection
+lfs_configure_make(
     name = "file",
-    cmd = """
-set -euo pipefail
-cd /sources/file-5.45
-
-# Configure
-./configure --prefix=/usr --disable-static
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
-    deps = [
-        ":extract_file",
-        ":glibc",
-        ":zlib",
-    ],
+    srcs = ["@file_src//file"],
+    configure_flags = ["--prefix=/usr"],
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.14 Readline - Command line editing library
-# Note: Requires ncurses (not available in Phase 2), but can use curses fallback
-lfs_chroot_extract_tarball(
-    name = "extract_readline",
-    tarball_name = "readline-8.2.13.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 10. Readline - Line editing library
+lfs_package(
     name = "readline",
-    cmd = """
-set -euo pipefail
-cd /sources/readline-8.2.13
-
-# Prevent library renaming issues
-sed -i '/MV.*old/d' Makefile.in
-sed -i '/{OLDSUFF}/c:' support/shlib-install
-
-# Remove rpath
-sed -i 's/-Wl,-rpath,[^ ]*//' support/shobj-conf
-
-# Configure
-./configure --prefix=/usr \\
+    srcs = ["@readline_src//file"],
+    build_cmd = 'make SHLIB_LIBS="-lncursesw"',
+    configure_cmd = """
+        sed -i '/MV.*old/d' Makefile.in
+        sed -i '/{OLDSUFF}/c:' support/shlib-install
+        sed -i 's/-Wl,-rpath,[^ ]*//' support/shobj-conf
+        ./configure --prefix=/usr \\
             --disable-static \\
             --with-curses \\
             --docdir=/usr/share/doc/readline-8.2.13
-
-# Build
-make SHLIB_LIBS="-lncursesw" -j$(nproc)
-
-# Install
-make SHLIB_LIBS="-lncursesw" install
-
-# Install documentation
-install -v -m644 doc/*.{ps,pdf,html,dvi} /usr/share/doc/readline-8.2.13 || true
-""",
-    deps = [
-        ":extract_readline",
-        ":glibc",
-    ],
+    """,
+    install_cmd = """
+        make SHLIB_LIBS="-lncursesw" install
+        install -v -m644 doc/*.{ps,pdf,html,dvi} /usr/share/doc/readline-8.2.13
+    """,
+    phase = "chroot",
+    deps = [":glibc"],
 )
 
-# 8.15 M4 - Macro processor (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_m4",
-    tarball_name = "m4-1.4.19.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 11. M4 - Macro processor
+lfs_configure_make(
     name = "m4",
-    cmd = """
-set -euo pipefail
-cd /sources/m4-1.4.19
-
-# Configure
-./configure --prefix=/usr
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
-    deps = [
-        ":extract_m4",
-        ":glibc",
-    ],
+    srcs = ["@m4_src//file"],
+    configure_flags = ["--prefix=/usr"],
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.16 Bc - Arbitrary precision calculator (test suite: make check)
-# Note: Bc uses custom configure script (not autoconf)
-lfs_chroot_extract_tarball(
-    name = "extract_bc",
-    tarball_name = "bc-6.7.6.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 12. Bc - Arbitrary precision calculator
+lfs_package(
     name = "bc",
-    cmd = """
-set -euo pipefail
-cd /sources/bc-6.7.6
-
-# Configure (custom configure script, not autoconf)
-# -G = generate GNU bc compatible behavior
-# -O3 = optimization level 3
-# -r = readline support
-CC=gcc ./configure -G -O3 -r
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
+    srcs = ["@bc_src//file"],
+    build_cmd = "make",
+    configure_cmd = "CC=gcc ./configure --prefix=/usr -G -O3 -r",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make test",
     deps = [
-        ":extract_bc",
         ":glibc",
         ":readline",
     ],
 )
 
-# 8.17 Flex - Lexical analyzer (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_flex",
-    tarball_name = "flex-2.6.4.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 13. Flex - Lexical analyzer generator
+lfs_package(
     name = "flex",
-    cmd = """
-set -euo pipefail
-cd /sources/flex-2.6.4
-
-# Create build directory
-mkdir -v build
-cd build
-
-# Configure (out-of-tree build)
-../configure --prefix=/usr \\
-             --disable-static \\
-             --docdir=/usr/share/doc/flex-2.6.4
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-
-# Create compatibility symlinks for lex
-ln -sv flex /usr/bin/lex
-ln -sv flex.1 /usr/share/man/man1/lex.1
-""",
+    srcs = ["@flex_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --docdir=/usr/share/doc/flex-2.6.4 \\
+            --disable-static
+    """,
+    install_cmd = """
+        make install
+        ln -sv flex /usr/bin/lex
+        ln -sv flex.1 /usr/share/man/man1/lex.1
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
     deps = [
-        ":extract_flex",
         ":glibc",
         ":m4",
     ],
 )
 
-# 8.18 Tcl - Tool Command Language (test suite: make test)
-# Note: Complex subdirectory build with config file fixes
-lfs_chroot_extract_tarball(
-    name = "extract_tcl",
-    tarball_name = "tcl8.6.14-src.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 14. Tcl - Tool Command Language
+lfs_package(
     name = "tcl",
-    cmd = """
-set -euo pipefail
-cd /sources/tcl8.6.14
-
-# Configure (build happens in unix subdirectory)
-SRCDIR=$(pwd)
-cd unix
-./configure --prefix=/usr \\
+    srcs = ["@tcl_src//file"],
+    build_cmd = """
+        cd unix
+        make
+        sed -e "s|$SRCDIR/unix|/usr/lib|" \\
+            -e "s|$SRCDIR|/usr/include|" \\
+            -i tclConfig.sh
+        sed -e "s|$SRCDIR/unix/pkgs/tdbc1.1.7|/usr/lib/tdbc1.1.7|" \\
+            -e "s|$SRCDIR/pkgs/tdbc1.1.7/generic|/usr/include|" \\
+            -e "s|$SRCDIR/pkgs/tdbc1.1.7/library|/usr/lib/tcl8.6|" \\
+            -e "s|$SRCDIR/pkgs/tdbc1.1.7|/usr/include|" \\
+            -i pkgs/tdbc1.1.7/tdbcConfig.sh
+        sed -e "s|$SRCDIR/unix/pkgs/itcl4.2.4|/usr/lib/itcl4.2.4|" \\
+            -e "s|$SRCDIR/pkgs/itcl4.2.4/generic|/usr/include|" \\
+            -e "s|$SRCDIR/pkgs/itcl4.2.4|/usr/include|" \\
+            -i pkgs/itcl4.2.4/itclConfig.sh
+        unset SRCDIR
+    """,
+    configure_cmd = """
+        SRCDIR=$(pwd)
+        cd unix
+        ./configure --prefix=/usr \\
             --mandir=/usr/share/man \\
             --disable-rpath
-
-# Build
-make -j$(nproc)
-
-# Fix config files to reference install directories
-sed -e "s|$SRCDIR/unix|/usr/lib|" \\
-    -e "s|$SRCDIR|/usr/include|" \\
-    -i tclConfig.sh
-
-sed -e "s|$SRCDIR/unix/pkgs/tdbc1.1.7|/usr/lib/tdbc1.1.7|" \\
-    -e "s|$SRCDIR/pkgs/tdbc1.1.7/generic|/usr/include|" \\
-    -e "s|$SRCDIR/pkgs/tdbc1.1.7/library|/usr/lib/tcl8.6|" \\
-    -e "s|$SRCDIR/pkgs/tdbc1.1.7|/usr/include|" \\
-    -i pkgs/tdbc1.1.7/tdbcConfig.sh
-
-sed -e "s|$SRCDIR/unix/pkgs/itcl4.2.4|/usr/lib/itcl4.2.4|" \\
-    -e "s|$SRCDIR/pkgs/itcl4.2.4/generic|/usr/include|" \\
-    -e "s|$SRCDIR/pkgs/itcl4.2.4|/usr/include|" \\
-    -i pkgs/itcl4.2.4/itclConfig.sh
-
-# Install
-make install
-
-# Make library writable for debugging symbols
-chmod -v u+w /usr/lib/libtcl8.6.so
-
-# Install private headers (needed by Expect)
-make install-private-headers
-
-# Create symlink
-ln -sfv tclsh8.6 /usr/bin/tclsh
-
-# Rename conflicting man page
-mv /usr/share/man/man3/{Thread,Tcl_Thread}.3
-""",
-    deps = [
-        ":extract_tcl",
-        ":glibc",
-        ":zlib",
-    ],
+    """,
+    install_cmd = """
+        cd unix
+        make install
+        chmod -v u+w /usr/lib/libtcl8.6.so
+        make install-private-headers
+        ln -sfv tclsh8.6 /usr/bin/tclsh
+        mv /usr/share/man/man3/{Thread,Tcl_Thread}.3
+    """,
+    phase = "chroot",
+    test_cmd = "cd unix && make test",
+    deps = [":glibc"],
 )
 
-# 8.19 Expect - Automating interactive programs (CRITICAL - requires PTY)
-# Test suite: make test
-lfs_chroot_extract_tarball(
-    name = "extract_expect",
-    tarball_name = "expect5.45.4.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 15. Expect - Programmed dialogue tool
+lfs_package(
     name = "expect",
-    cmd = """
-set -euo pipefail
-cd /sources/expect5.45.4
-
-# Note: PTY check would go here in production
-# python3 -c 'from pty import spawn; spawn(["echo", "ok"])'
-
-# Apply GCC 14 compatibility patch
-patch -Np1 -i /sources/expect-5.45.4-gcc14-1.patch
-
-# Configure
-./configure --prefix=/usr \\
+    srcs = ["@expect_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        python3 -c 'from pty import spawn; spawn(["echo", "ok"])'
+        patch -Np1 -i ../expect-*-gcc14-*.patch
+        ./configure --prefix=/usr \\
             --with-tcl=/usr/lib \\
             --enable-shared \\
             --disable-rpath \\
             --mandir=/usr/share/man \\
             --with-tclinclude=/usr/include
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-
-# Create compatibility symlink
-ln -svf expect5.45.4/libexpect5.45.4.so /usr/lib
-""",
-    deps = [
-        ":extract_expect",
-        ":glibc",
-        ":tcl",
-    ],
+    """,
+    install_cmd = """
+        make install
+        ln -svf expect5.45.4/libexpect5.45.4.so /usr/lib
+    """,
+    patches = ["@expect_gcc14_patch//file"],
+    phase = "chroot",
+    test_cmd = "make test",
+    deps = [":tcl"],
 )
 
-# 8.20 DejaGNU - Testing framework (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_dejagnu",
-    tarball_name = "dejagnu-1.6.3.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 16. DejaGNU - Testing framework
+lfs_package(
     name = "dejagnu",
-    cmd = """
-set -euo pipefail
-cd /sources/dejagnu-1.6.3
-
-# Configure
-./configure --prefix=/usr
-
-# Build documentation
-makeinfo --html --no-split -o doc/dejagnu.html doc/dejagnu.texi
-makeinfo --plaintext -o doc/dejagnu.txt doc/dejagnu.texi
-
-# Install
-make install
-
-# Install documentation
-install -v -dm755 /usr/share/doc/dejagnu-1.6.3
-install -v -m644 doc/dejagnu.{html,txt} /usr/share/doc/dejagnu-1.6.3
-""",
-    deps = [
-        ":expect",
-        ":extract_dejagnu",
-        ":glibc",
-    ],
+    srcs = ["@dejagnu_src//file"],
+    build_cmd = "true",
+    configure_cmd = """
+        mkdir -v build
+        cd build
+        ../configure --prefix=/usr
+        makeinfo --html --no-split -o doc/dejagnu.html ../doc/dejagnu.texi
+        makeinfo --plaintext -o doc/dejagnu.txt ../doc/dejagnu.texi
+    """,
+    install_cmd = """
+        cd build
+        make install
+        install -v -dm755 /usr/share/doc/dejagnu-1.6.3
+        install -v -m644 doc/dejagnu.{html,txt} /usr/share/doc/dejagnu-1.6.3
+    """,
+    phase = "chroot",
+    test_cmd = "cd build && make check",
+    deps = [":expect"],
 )
 
-# 8.21 Pkgconf - pkg-config implementation
-lfs_chroot_extract_tarball(
-    name = "extract_pkgconf",
-    tarball_name = "pkgconf-2.3.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 17. Pkgconf - Package config tool
+lfs_package(
     name = "pkgconf",
-    cmd = """
-set -euo pipefail
-cd /sources/pkgconf-2.3.0
-
-# Create build directory
-mkdir -v build
-cd build
-
-# Configure (out-of-tree build)
-../configure --prefix=/usr \\
-             --disable-static
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-
-# Create pkg-config compatibility symlinks
-ln -sv pkgconf /usr/bin/pkg-config
-ln -sv pkgconf.1 /usr/share/man/man1/pkg-config.1
-""",
-    deps = [
-        ":extract_pkgconf",
-        ":glibc",
-    ],
-)
-
-###############################################################################
-# Phase 2 Aggregate Target
-###############################################################################
-
-filegroup(
-    name = "phase2_core_foundation",
-    srcs = [
-        ":bc",
-        ":bzip2",
-        ":dejagnu",
-        ":expect",
-        ":file",
-        ":flex",
-        ":glibc",
-        ":iana_etc",
-        ":lz4",
-        ":m4",
-        ":man_pages",
-        ":pkgconf",
-        ":readline",
-        ":tcl",
-        ":xz",
-        ":zlib",
-        ":zstd",
-    ],
-)
-
-# Final System Toolchain (available after Phase 2)
-# This toolchain uses the rebuilt glibc and provides the final system paths.
-# Phase 3+ packages can use this instead of the Chapter 7 cross-toolchain.
-lfs_toolchain(
-    name = "final_toolchain",
-    bin_path = "/usr/bin:/usr/sbin:/bin:/sbin",
-    env = {
-        "CC": "gcc",
-        "CXX": "g++",
-    },
-    visibility = ["//visibility:public"],
+    srcs = ["@pkgconf_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --disable-static \\
+            --docdir=/usr/share/doc/pkgconf-2.3.0
+    """,
+    install_cmd = """
+        make install
+        ln -sv pkgconf /usr/bin/pkg-config
+        ln -sv pkgconf.1 /usr/share/man/man1/pkg-config.1
+    """,
+    phase = "chroot",
     deps = [":glibc"],
 )
 
 ###############################################################################
-# PHASE 3: Toolchain & Security Packages (16 packages)
+# PHASE 3: Toolchain & Security (16 packages)
 ###############################################################################
 
-# 8.22 Binutils - Final linker and assembler (CRITICAL - test suite available: make check)
-# Note: Out-of-tree build required, multiple configure options
-lfs_chroot_extract_tarball(
-    name = "extract_binutils",
-    tarball_name = "binutils-2.43.1.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 18. Binutils - Binary tools (CRITICAL - requires tests)
+# Expected test failures: ~12 gold linker tests when PIE/SSP enabled
+lfs_package(
     name = "binutils",
-    cmd = """
-set -euo pipefail
-cd /sources/binutils-2.43.1
-
-# Out-of-tree build required
-mkdir -v build
-cd build
-
-# Configure
-../configure --prefix=/usr \\
-             --sysconfdir=/etc \\
-             --enable-gold \\
-             --enable-ld=default \\
-             --enable-plugins \\
-             --enable-shared \\
-             --disable-werror \\
-             --enable-64-bit-bfd \\
-             --enable-new-dtags \\
-             --with-system-zlib \\
-             --enable-default-hash-style=gnu
-
-# Build
-make -j$(nproc) tooldir=/usr
-
-# Install
-make tooldir=/usr install
-
-# Remove useless static libraries
-rm -fv /usr/lib/lib{bfd,ctf,ctf-nobfd,gprofng,opcodes,sframe}.a
-""",
+    srcs = ["@binutils_src//file"],
+    build_cmd = "cd build && make tooldir=/usr",
+    configure_cmd = """
+        mkdir -v build
+        cd build
+        ../configure --prefix=/usr \\
+            --sysconfdir=/etc \\
+            --enable-gold \\
+            --enable-ld=default \\
+            --enable-plugins \\
+            --enable-shared \\
+            --disable-werror \\
+            --enable-64-bit-bfd \\
+            --enable-new-dtags \\
+            --with-system-zlib \\
+            --enable-default-hash-style=gnu
+    """,
+    install_cmd = """
+        cd build
+        make tooldir=/usr install
+        rm -fv /usr/lib/lib{bfd,ctf,ctf-nobfd,gprofng,opcodes,sframe}.a
+    """,
+    phase = "chroot",
+    test_cmd = """
+        cd build
+        make -k check
+        grep '^FAIL:' $(find -name '*.log') || true
+    """,
     deps = [
-        ":extract_binutils",
+        ":dejagnu",
         ":glibc",
         ":zlib",
     ],
 )
 
-# 8.23 GMP - Math library for GCC (CRITICAL - test suite available: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_gmp",
-    tarball_name = "gmp-6.3.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 19. GMP - Arbitrary precision math library
+lfs_package(
     name = "gmp",
-    cmd = """
-set -euo pipefail
-cd /sources/gmp-6.3.0
-
-# Configure
-./configure --prefix=/usr \\
+    srcs = ["@gmp_src//file"],
+    build_cmd = """
+        make
+        make html
+    """,
+    configure_cmd = """
+        ./configure --prefix=/usr \\
             --enable-cxx \\
             --disable-static \\
             --docdir=/usr/share/doc/gmp-6.3.0
-
-# Build
-make -j$(nproc)
-make html
-
-# Install
-make install
-make install-html
-""",
-    deps = [
-        ":extract_gmp",
-        ":glibc",
-    ],
+    """,
+    install_cmd = """
+        make install
+        make install-html
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.24 MPFR - Math library for GCC (CRITICAL - test suite available: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_mpfr",
-    tarball_name = "mpfr-4.2.1.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 20. MPFR - Multiple precision floating-point library
+lfs_package(
     name = "mpfr",
-    cmd = """
-set -euo pipefail
-cd /sources/mpfr-4.2.1
-
-# Configure
-./configure --prefix=/usr \\
+    srcs = ["@mpfr_src//file"],
+    build_cmd = """
+        make
+        make html
+    """,
+    configure_cmd = """
+        ./configure --prefix=/usr \\
             --disable-static \\
             --enable-thread-safe \\
             --docdir=/usr/share/doc/mpfr-4.2.1
-
-# Build
-make -j$(nproc)
-make html
-
-# Install
-make install
-make install-html
-""",
-    deps = [
-        ":extract_mpfr",
-        ":glibc",
-        ":gmp",
-    ],
+    """,
+    install_cmd = """
+        make install
+        make install-html
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gmp"],
 )
 
-# 8.25 MPC - Math library for GCC (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_mpc",
-    tarball_name = "mpc-1.3.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 21. MPC - Complex numbers library
+lfs_package(
     name = "mpc",
-    cmd = """
-set -euo pipefail
-cd /sources/mpc-1.3.1
-
-# Configure
-./configure --prefix=/usr \\
+    srcs = ["@mpc_src//file"],
+    build_cmd = """
+        make
+        make html
+    """,
+    configure_cmd = """
+        ./configure --prefix=/usr \\
             --disable-static \\
             --docdir=/usr/share/doc/mpc-1.3.1
-
-# Build
-make -j$(nproc)
-make html
-
-# Install
-make install
-make install-html
-""",
-    deps = [
-        ":extract_mpc",
-        ":glibc",
-        ":gmp",
-        ":mpfr",
-    ],
+    """,
+    install_cmd = """
+        make install
+        make install-html
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":mpfr"],
 )
 
-# 8.26 Attr - Extended file attributes (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_attr",
-    tarball_name = "attr-2.5.2.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 22. Attr - Extended attributes
+lfs_configure_make(
     name = "attr",
-    cmd = """
-set -euo pipefail
-cd /sources/attr-2.5.2
-
-# Configure
-./configure --prefix=/usr \\
-            --disable-static \\
-            --sysconfdir=/etc \\
-            --docdir=/usr/share/doc/attr-2.5.2
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
-    deps = [
-        ":extract_attr",
-        ":glibc",
+    srcs = ["@attr_src//file"],
+    configure_flags = [
+        "--prefix=/usr",
+        "--disable-static",
+        "--sysconfdir=/etc",
+        "--docdir=/usr/share/doc/attr-2.5.2",
     ],
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.27 Acl - Access control lists (test suite depends on coreutils)
-lfs_chroot_extract_tarball(
-    name = "extract_acl",
-    tarball_name = "acl-2.3.2.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 23. Acl - Access control lists
+lfs_configure_make(
     name = "acl",
-    cmd = """
-set -euo pipefail
-cd /sources/acl-2.3.2
-
-# Configure
-./configure --prefix=/usr \\
-            --disable-static \\
-            --docdir=/usr/share/doc/acl-2.3.2
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
-    deps = [
-        ":attr",
-        ":extract_acl",
-        ":glibc",
+    srcs = ["@acl_src//file"],
+    configure_flags = [
+        "--prefix=/usr",
+        "--disable-static",
+        "--docdir=/usr/share/doc/acl-2.3.2",
     ],
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":attr"],
 )
 
-# 8.28 Libcap - POSIX capabilities library (test suite: make test)
-# Note: Make-based, requires sed to prevent static library installation
-lfs_chroot_extract_tarball(
-    name = "extract_libcap",
-    tarball_name = "libcap-2.70.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 24. Libcap - POSIX capabilities
+lfs_package(
     name = "libcap",
-    cmd = """
-set -euo pipefail
-cd /sources/libcap-2.70
-
-# Prevent static library installation
-sed -i '/install -m.*STA/d' libcap/Makefile
-
-# Build
-make -j$(nproc) prefix=/usr lib=lib
-
-# Install
-make prefix=/usr lib=lib install
-""",
-    deps = [
-        ":attr",
-        ":extract_libcap",
-        ":glibc",
-    ],
+    srcs = ["@libcap_src//file"],
+    build_cmd = "make prefix=/usr lib=lib",
+    configure_cmd = "sed -i '/install -m.*STA/d' libcap/Makefile",
+    install_cmd = "make prefix=/usr lib=lib install",
+    phase = "chroot",
+    test_cmd = "make test",
+    deps = [":glibc"],
 )
 
-# 8.29 Libxcrypt - Modern password hashing library (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_libxcrypt",
-    tarball_name = "libxcrypt-4.4.36.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 25. Libxcrypt - Password hashing library
+lfs_configure_make(
     name = "libxcrypt",
-    cmd = """
-set -euo pipefail
-cd /sources/libxcrypt-4.4.36
-
-# Configure
-./configure --prefix=/usr \\
-            --enable-hashes=strong,glibc \\
-            --enable-obsolete-api=no \\
-            --disable-static \\
-            --disable-failure-tokens
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
-    deps = [
-        ":extract_libxcrypt",
-        ":glibc",
+    srcs = ["@libxcrypt_src//file"],
+    configure_flags = [
+        "--prefix=/usr",
+        "--enable-hashes=strong,glibc",
+        "--enable-obsolete-api=no",
+        "--disable-static",
+        "--disable-failure-tokens",
     ],
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":glibc"],
 )
 
-# 8.30 Shadow - Password management utilities
-# Note: Complex configuration with sed patches and custom install
-lfs_chroot_extract_tarball(
-    name = "extract_shadow",
-    tarball_name = "shadow-4.16.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 26. Shadow - Password utilities (provides tester user utilities)
+lfs_package(
     name = "shadow",
-    cmd = """
-set -euo pipefail
-cd /sources/shadow-4.16.0
+    srcs = ["@shadow_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        sed -i 's/groups$(EXEEXT) //' src/Makefile.in
+        find man -name Makefile.in -exec sed -i 's/groups\\.1 / /' {} \\;
+        find man -name Makefile.in -exec sed -i 's/getspnam\\.3 / /' {} \\;
+        find man -name Makefile.in -exec sed -i 's/passwd\\.5 / /' {} \\;
 
-# Disable groups program (coreutils provides better version)
-sed -i 's/groups$$(EXEEXT) //' src/Makefile.in
-find man -name Makefile.in -exec sed -i 's/groups\\.1 / /'   {} \\;
-find man -name Makefile.in -exec sed -i 's/getspnam\\.3 / /' {} \\;
-find man -name Makefile.in -exec sed -i 's/passwd\\.5 / /'   {} \\;
+        sed -e 's:#ENCRYPT_METHOD DES:ENCRYPT_METHOD YESCRYPT:' \\
+            -e 's:/var/spool/mail:/var/mail:' \\
+            -e '/PATH=/{s@/sbin:@@;s@/bin:@@}' \\
+            -i etc/login.defs
 
-# Configure login.defs: YESCRYPT encryption, /var/mail location, clean PATH
-sed -e 's:#ENCRYPT_METHOD DES:ENCRYPT_METHOD YESCRYPT:' \\
-    -e 's:/var/spool/mail:/var/mail:' \\
-    -e '/PATH=/{s@/sbin:@@;s@/bin:@@}' \\
-    -i etc/login.defs
-
-# Create passwd file placeholder
-touch /usr/bin/passwd
-
-# Configure
-./configure --sysconfdir=/etc \\
+        touch /usr/bin/passwd
+        ./configure --sysconfdir=/etc \\
             --disable-static \\
             --with-{b,yes}crypt \\
             --without-libbsd \\
             --with-group-name-max-length=32
+    """,
+    install_cmd = """
+        make exec_prefix=/usr install
+        make -C man install-man
 
-# Build
-make -j$(nproc)
+        # Post-install configuration
+        pwconv
+        grpconv
 
-# Install
-make exec_prefix=/usr install
-make -C man install-man
-
-# Enable shadowed passwords
-pwconv
-grpconv
-""",
-    deps = [
-        ":extract_shadow",
-        ":glibc",
-        ":libxcrypt",
-    ],
+        mkdir -p /etc/default
+        useradd -D --gid 999
+    """,
+    phase = "chroot",
+    deps = [":libxcrypt"],
 )
 
-# 8.31 GCC - Final system compiler (CRITICAL - test suite available: make check)
-# Note: Most complex package - needs GMP/MPFR/MPC dependencies
-lfs_chroot_extract_tarball(
-    name = "extract_gcc",
-    tarball_name = "gcc-14.2.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 27. GCC - GNU Compiler Collection (CRITICAL - requires tests)
+# Expected test failures: some analyzer tests, AVX-dependent vect tests
+# Requires tester user (depends on shadow)
+lfs_package(
     name = "gcc",
-    cmd = """
-set -euo pipefail
-cd /sources/gcc-14.2.0
+    srcs = ["@gcc_src//file"],
+    build_cmd = "cd build && make",
+    configure_cmd = """
+        case $(uname -m) in
+          x86_64)
+            sed -e '/m64=/s/lib64/lib/' -i.orig gcc/config/i386/t-linux64
+          ;;
+        esac
 
-# Fix lib64 directory on x86_64
-case $(uname -m) in
-  x86_64)
-    sed -e '/m64=/s/lib64/lib/' \\
-        -i.orig gcc/config/i386/t-linux64
-  ;;
-esac
+        mkdir -v build
+        cd build
+        ../configure --prefix=/usr \\
+            LD=ld \\
+            --enable-languages=c,c++ \\
+            --enable-default-pie \\
+            --enable-default-ssp \\
+            --enable-host-pie \\
+            --disable-multilib \\
+            --disable-bootstrap \\
+            --disable-fixincludes \\
+            --with-system-zlib
+    """,
+    install_cmd = """
+        cd build
+        make install
+        chown -v -R root:root /usr/lib/gcc/$(gcc -dumpmachine)/14.2.0/include{,-fixed}
+        ln -svr /usr/bin/cpp /usr/lib
+        ln -sv gcc.1 /usr/share/man/man1/cc.1
+        ln -sfv ../../libexec/gcc/$(gcc -dumpmachine)/14.2.0/liblto_plugin.so /usr/lib/bfd-plugins/
 
-# Out-of-tree build required
-mkdir -v build
-cd build
+        # Verify installation
+        echo 'int main(){}' > dummy.c
+        cc dummy.c -v -Wl,--verbose &> dummy.log
+        readelf -l a.out | grep ': /lib'
 
-# Configure GCC
-../configure --prefix=/usr \\
-             LD=ld \\
-             --enable-languages=c,c++ \\
-             --enable-default-pie \\
-             --enable-default-ssp \\
-             --enable-host-pie \\
-             --disable-multilib \\
-             --disable-bootstrap \\
-             --disable-fixincludes \\
-             --with-system-zlib
+        grep -E -o '/usr/lib.*/S?crt[1in].*succeeded' dummy.log
+        grep -B4 '^ /usr/include' dummy.log
+        grep 'SEARCH.*/usr/lib' dummy.log | sed 's|; |\\n|g'
+        grep "/lib.*/libc.so.6 " dummy.log
+        grep found dummy.log
 
-# Build
-make -j$(nproc)
+        rm -v dummy.c a.out dummy.log
 
-# Install
-make install
+        mkdir -pv /usr/share/gdb/auto-load/usr/lib
+        mv -v /usr/lib/*gdb.py /usr/share/gdb/auto-load/usr/lib
+    """,
+    phase = "chroot",
+    test_cmd = """
+        cd build
+        ulimit -s -H unlimited
+        sed -e '/cpython/d' -i ../gcc/testsuite/gcc.dg/plugin/plugin.exp
+        sed -e 's/no-pic /&-no-pie /' -i ../gcc/testsuite/gcc.target/i386/pr113689-1.c
+        sed -e 's/300000/(1|300000)/' -i ../libgomp/testsuite/libgomp.c-c++-common/pr109062.c
+        sed -e 's/{ target nonpic } //' -e '/GOTPCREL/d' -i ../gcc/testsuite/gcc.target/i386/fentryname3.c
 
-# Create cc symlink
-ln -svr /usr/bin/gcc /usr/bin/cc
-
-# Create FHS-compatible liblto_plugin symlink
-ln -sfv ../../libexec/gcc/$(gcc -dumpmachine)/14.2.0/liblto_plugin.so \\
-        /usr/lib/bfd-plugins/
-""",
+        chown -R tester .
+        su tester -c "PATH=$PATH make -k check"
+        ../contrib/test_summary
+    """,
     deps = [
         ":binutils",
-        ":extract_gcc",
-        ":glibc",
+        ":dejagnu",
         ":gmp",
         ":mpc",
         ":mpfr",
+        ":shadow",
         ":zlib",
     ],
 )
 
-# 8.32 Ncurses - Terminal handling library
-# Note: Complex DESTDIR install to avoid shell crash during library replacement
-lfs_chroot_extract_tarball(
-    name = "extract_ncurses",
-    tarball_name = "ncurses-6.5.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 28. Ncurses - Terminal handling library
+lfs_package(
     name = "ncurses",
-    cmd = """
-set -euo pipefail
-cd /sources/ncurses-6.5
-
-# Configure
-./configure --prefix=/usr \\
+    srcs = ["@ncurses_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
             --mandir=/usr/share/man \\
             --with-shared \\
             --without-debug \\
@@ -1225,1453 +731,1166 @@ cd /sources/ncurses-6.5
             --with-cxx-shared \\
             --enable-pc-files \\
             --with-pkg-config-libdir=/usr/lib/pkgconfig
+    """,
+    install_cmd = """
+        make DESTDIR=$PWD/dest install
+        install -vm755 dest/usr/lib/libncursesw.so.6.5 /usr/lib
+        rm -v dest/usr/lib/libncursesw.so.6.5
+        sed -e 's/^#if.*XOPEN.*$/#if 1/' -i dest/usr/include/curses.h
+        cp -av dest/* /
 
-# Build
-make -j$(nproc)
+        for lib in ncurses form panel menu ; do
+            ln -sfv lib${lib}w.so /usr/lib/lib${lib}.so
+            ln -sfv ${lib}w.pc /usr/lib/pkgconfig/${lib}.pc
+        done
 
-# Install to DESTDIR to avoid shell crash
-make DESTDIR=$PWD/dest install
-install -vm755 dest/usr/lib/libncursesw.so.6.5 /usr/lib
-rm -v dest/usr/lib/libncursesw.so.6.5
+        ln -sfv libncursesw.so /usr/lib/libcurses.so
 
-# Edit curses.h for wide-character ABI
-sed -e 's/^#if.*XOPEN.*$/#if 1/' \\
-    -i dest/usr/include/curses.h
-
-# Copy everything else
-cp -av dest/* /
-
-# Create compatibility symlinks for non-wide libraries
-for lib in ncurses form panel menu ; do
-    ln -sfv lib${lib}w.so /usr/lib/lib${lib}.so
-    ln -sfv ${lib}w.pc    /usr/lib/pkgconfig/${lib}.pc
-done
-
-# Create old-style linker script for compatibility
-ln -sfv libncursesw.so /usr/lib/libcurses.so
-
-# Install documentation
-cp -v -R doc/html /usr/share/doc/ncurses-6.5 || true
-""",
+        cp -v -R doc -T /usr/share/doc/ncurses-6.5
+    """,
+    phase = "chroot",
     deps = [
-        ":extract_ncurses",
         ":gcc",
         ":glibc",
     ],
 )
 
-# 8.33 Sed - Stream editor (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_sed",
-    tarball_name = "sed-4.9.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 29. Sed - Stream editor
+lfs_package(
     name = "sed",
-    cmd = """
-set -euo pipefail
-cd /sources/sed-4.9
-
-# Configure
-./configure --prefix=/usr
-
-# Build
-make -j$(nproc)
-make html
-
-# Install
-make install
-install -d -m755 /usr/share/doc/sed-4.9
-install -m644 doc/sed.html /usr/share/doc/sed-4.9
-""",
-    deps = [
-        ":extract_sed",
-        ":gcc",
-        ":glibc",
-    ],
+    srcs = ["@sed_src//file"],
+    build_cmd = """
+        make
+        make html
+    """,
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = """
+        make install
+        install -d -m755 /usr/share/doc/sed-4.9
+        install -m644 doc/sed.html /usr/share/doc/sed-4.9
+    """,
+    phase = "chroot",
+    test_cmd = """
+        chown -R tester .
+        su tester -c "PATH=$PATH make check"
+    """,
+    deps = [":gcc"],
 )
 
-# 8.34 Psmisc - Process utilities (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_psmisc",
-    tarball_name = "psmisc-23.7.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 30. Psmisc - Process utilities
+lfs_configure_make(
     name = "psmisc",
-    cmd = """
-set -euo pipefail
-cd /sources/psmisc-23.7
-
-# Configure
-./configure --prefix=/usr
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
-    deps = [
-        ":extract_psmisc",
-        ":gcc",
-        ":glibc",
-        ":ncurses",
-    ],
+    srcs = ["@psmisc_src//file"],
+    configure_flags = ["--prefix=/usr"],
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":ncurses"],
 )
 
-# 8.35 Gettext - Internationalization framework (test suite: make check - long!)
-lfs_chroot_extract_tarball(
-    name = "extract_gettext",
-    tarball_name = "gettext-0.22.5.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 31. Gettext - Internationalization utilities
+lfs_package(
     name = "gettext",
-    cmd = """
-set -euo pipefail
-cd /sources/gettext-0.22.5
-
-# Configure
-./configure --prefix=/usr \\
+    srcs = ["@gettext_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
             --disable-static \\
             --docdir=/usr/share/doc/gettext-0.22.5
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-chmod -v 0755 /usr/lib/preloadable_libintl.so
-""",
-    deps = [
-        ":acl",
-        ":extract_gettext",
-        ":gcc",
-        ":glibc",
-    ],
+    """,
+    install_cmd = """
+        make install
+        chmod -v 0755 /usr/lib/preloadable_libintl.so
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":ncurses"],
 )
 
-# 8.36 Bison - Parser generator (test suite: make check)
-lfs_chroot_extract_tarball(
-    name = "extract_bison",
-    tarball_name = "bison-3.8.2.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 32. Bison - Parser generator
+lfs_configure_make(
     name = "bison",
-    cmd = """
-set -euo pipefail
-cd /sources/bison-3.8.2
-
-# Configure
-./configure --prefix=/usr \\
-            --docdir=/usr/share/doc/bison-3.8.2
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
+    srcs = ["@bison_src//file"],
+    configure_flags = [
+        "--prefix=/usr",
+        "--docdir=/usr/share/doc/bison-3.8.2",
+    ],
+    phase = "chroot",
+    test_cmd = "make check",
     deps = [
-        ":extract_bison",
         ":gcc",
         ":glibc",
-        ":m4",
     ],
 )
 
-# 8.37 Grep - Pattern matching utility (test suite: make check)
-# Note: Suppress egrep/fgrep deprecation warning
-lfs_chroot_extract_tarball(
-    name = "extract_grep",
-    tarball_name = "grep-3.11.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 33. Grep - Pattern matching utility
+lfs_package(
     name = "grep",
-    cmd = """
-set -euo pipefail
-cd /sources/grep-3.11
-
-# Remove warning about egrep/fgrep that breaks tests
-sed -i "s/echo/#echo/" src/egrep.sh
-
-# Configure
-./configure --prefix=/usr
-
-# Build
-make -j$(nproc)
-
-# Install
-make install
-""",
+    srcs = ["@grep_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        sed -i "s/echo/#echo/" src/egrep.sh
+        ./configure --prefix=/usr
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
     deps = [
-        ":extract_grep",
         ":gcc",
         ":glibc",
     ],
 )
 
-###############################################################################
-# Phase 3 Aggregate Target
-###############################################################################
-
-filegroup(
-    name = "phase3_toolchain_security",
-    srcs = [
-        ":acl",
-        ":attr",
-        ":binutils",
-        ":bison",
-        ":gcc",
-        ":gettext",
-        ":gmp",
-        ":grep",
-        ":libcap",
-        ":libxcrypt",
-        ":mpc",
-        ":mpfr",
-        ":ncurses",
-        ":psmisc",
-        ":sed",
-        ":shadow",
-    ],
-)
 ###############################################################################
 # Phase 4: Build System & Python (24 packages)
 ###############################################################################
 
-# 8.36 Bash - Bourne-Again Shell
-lfs_chroot_extract_tarball(
-    name = "extract_bash",
-    tarball_name = "bash-5.2.32.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 34. Bash - Shell
+lfs_package(
     name = "bash",
-    cmd = """
-set -euo pipefail
-cd /sources/bash-5.2.32
-./configure --prefix=/usr \
-            --without-bash-malloc \
-            --with-installed-readline \
+    srcs = ["@bash_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --without-bash-malloc \\
+            --with-installed-readline \\
+            bash_cv_strtold_broken=no \\
             --docdir=/usr/share/doc/bash-5.2.32
-make -j$(nproc)
-make install
-""",
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = """
+        chown -R tester .
+        su -s /usr/bin/expect tester << "EOF"
+set timeout -1
+spawn make tests
+expect eof
+lassign [wait] _ _ _ value
+exit $value
+EOF
+    """,
     deps = [
-        ":extract_bash",
-        ":glibc",
+        ":ncurses",
         ":readline",
     ],
 )
 
-# 8.37 Libtool - Generic library support script
-lfs_chroot_extract_tarball(
-    name = "extract_libtool",
-    tarball_name = "libtool-2.4.7.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 35. Libtool - Library support script
+lfs_package(
     name = "libtool",
-    cmd = """
-set -euo pipefail
-cd /sources/libtool-2.4.7
-./configure --prefix=/usr
-make -j$(nproc)
-make install
-rm -fv /usr/lib/libltdl.a
-""",
-    deps = [
-        ":bash",
-        ":extract_libtool",
-        ":glibc",
-    ],
+    srcs = ["@libtool_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = """
+        make install
+        rm -fv /usr/lib/libltdl.a
+    """,
+    phase = "chroot",
+    test_cmd = "make -k check",
+    deps = [":gcc"],
 )
 
-# 8.38 GDBM - GNU Database Manager
-lfs_chroot_extract_tarball(
-    name = "extract_gdbm",
-    tarball_name = "gdbm-1.24.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 36. GDBM - Database library
+lfs_package(
     name = "gdbm",
-    cmd = """
-set -euo pipefail
-cd /sources/gdbm-1.24
-./configure --prefix=/usr \
-            --disable-static \
+    srcs = ["@gdbm_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --disable-static \\
             --enable-libgdbm-compat
-make -j$(nproc)
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_gdbm",
-        ":glibc",
-    ],
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":readline"],
 )
 
-# 8.39 Gperf - Perfect hash function generator
-lfs_chroot_extract_tarball(
-    name = "extract_gperf",
-    tarball_name = "gperf-3.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 37. Gperf - Perfect hash function generator
+lfs_package(
     name = "gperf",
-    cmd = """
-set -euo pipefail
-cd /sources/gperf-3.1
-./configure --prefix=/usr --docdir=/usr/share/doc/gperf-3.1
-make -j$(nproc)
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_gperf",
-        ":glibc",
-    ],
+    srcs = ["@gperf_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr --docdir=/usr/share/doc/gperf-3.1",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make -j1 check",
+    deps = [":gcc"],
 )
 
-# 8.40 Expat - XML parser library
-lfs_chroot_extract_tarball(
-    name = "extract_expat",
-    tarball_name = "expat-2.6.2.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 38. Expat - XML parser library
+lfs_package(
     name = "expat",
-    cmd = """
-set -euo pipefail
-cd /sources/expat-2.6.2
-./configure --prefix=/usr \
-            --disable-static \
+    srcs = ["@expat_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --disable-static \\
             --docdir=/usr/share/doc/expat-2.6.2
-make -j$(nproc)
-make install
-install -v -m644 doc/*.{html,css} /usr/share/doc/expat-2.6.2
-""",
-    deps = [
-        ":bash",
-        ":extract_expat",
-        ":glibc",
-    ],
+    """,
+    install_cmd = """
+        make install
+        install -v -m644 doc/*.{html,css} /usr/share/doc/expat-2.6.2
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gcc"],
 )
 
-# 8.41 Inetutils - Network utilities
-lfs_chroot_extract_tarball(
-    name = "extract_inetutils",
-    tarball_name = "inetutils-2.5.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 39. Inetutils - Basic networking programs
+lfs_package(
     name = "inetutils",
-    cmd = """
-set -euo pipefail
-cd /sources/inetutils-2.5
-./configure --prefix=/usr \
-            --bindir=/usr/bin \
-            --localstatedir=/var \
-            --disable-logger \
-            --disable-whois \
-            --disable-rcp \
-            --disable-rexec \
-            --disable-rlogin \
-            --disable-rsh \
+    srcs = ["@inetutils_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        sed -i 's/def HAVE_TERMCAP_TGETENT/ 1/' telnet/telnet.c
+        ./configure --prefix=/usr \\
+            --bindir=/usr/bin \\
+            --localstatedir=/var \\
+            --disable-logger \\
+            --disable-whois \\
+            --disable-rcp \\
+            --disable-rexec \\
+            --disable-rlogin \\
+            --disable-rsh \\
             --disable-servers
-make -j$(nproc)
-make install
-mv -v /usr/{,s}bin/ifconfig
-""",
-    deps = [
-        ":bash",
-        ":extract_inetutils",
-        ":glibc",
-    ],
+    """,
+    install_cmd = """
+        make install
+        mv -v /usr/{,s}bin/ifconfig
+    """,
+    phase = "chroot",
+    deps = [":ncurses"],
 )
 
-# 8.42 Less - Text file viewer
-lfs_chroot_extract_tarball(
-    name = "extract_less",
-    tarball_name = "less-661.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 40. Less - Text file viewer
+lfs_package(
     name = "less",
-    cmd = """
-set -euo pipefail
-cd /sources/less-661
-./configure --prefix=/usr --sysconfdir=/etc
-make -j$(nproc)
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_less",
-        ":glibc",
-        ":ncurses",
-    ],
+    srcs = ["@less_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr --sysconfdir=/etc",
+    install_cmd = "make install",
+    phase = "chroot",
+    deps = [":ncurses"],
 )
 
-# 8.43 Perl - Practical Extraction and Report Language
-lfs_chroot_extract_tarball(
-    name = "extract_perl",
-    tarball_name = "perl-5.40.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 41. Perl - Programming language
+lfs_package(
     name = "perl",
-    cmd = """
-set -euo pipefail
-cd /sources/perl-5.40.0
-export BUILD_ZLIB=False
-export BUILD_BZIP2=0
-sh Configure -des \
-             -D prefix=/usr \
-             -D vendorprefix=/usr \
-             -D privlib=/usr/lib/perl5/5.40/core_perl \
-             -D archlib=/usr/lib/perl5/5.40/core_perl \
-             -D sitelib=/usr/lib/perl5/5.40/site_perl \
-             -D sitearch=/usr/lib/perl5/5.40/site_perl \
-             -D vendorlib=/usr/lib/perl5/5.40/vendor_perl \
-             -D vendorarch=/usr/lib/perl5/5.40/vendor_perl \
-             -D man1dir=/usr/share/man/man1 \
-             -D man3dir=/usr/share/man/man3 \
-             -D pager="/usr/bin/less -isR" \
-             -D useshrplib \
-             -D usethreads
-make -j$(nproc)
-make install
-unset BUILD_ZLIB BUILD_BZIP2
-""",
-    deps = [
-        ":bash",
-        ":extract_perl",
-        ":gdbm",
-        ":glibc",
-    ],
+    srcs = ["@perl_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        export BUILD_ZLIB=False
+        export BUILD_BZIP2=0
+        sh Configure -des \\
+            -D prefix=/usr \\
+            -D vendorprefix=/usr \\
+            -D privlib=/usr/lib/perl5/5.40/core_perl \\
+            -D archlib=/usr/lib/perl5/5.40/core_perl \\
+            -D sitelib=/usr/lib/perl5/5.40/site_perl \\
+            -D sitearch=/usr/lib/perl5/5.40/site_perl \\
+            -D vendorlib=/usr/lib/perl5/5.40/vendor_perl \\
+            -D vendorarch=/usr/lib/perl5/5.40/vendor_perl \\
+            -D man1dir=/usr/share/man/man1 \\
+            -D man3dir=/usr/share/man/man3 \\
+            -D pager="/usr/bin/less -isR" \\
+            -D useshrplib \\
+            -D usethreads
+    """,
+    install_cmd = """
+        make install
+        unset BUILD_ZLIB BUILD_BZIP2
+    """,
+    phase = "chroot",
+    test_cmd = "TEST_JOBS=$(nproc) make test_harness",
+    deps = [":gdbm"],
 )
 
-# 8.44 XML::Parser - Perl module for parsing XML
-lfs_chroot_extract_tarball(
-    name = "extract_xml_parser",
-    tarball_name = "XML-Parser-2.47.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 42. XML::Parser - Perl XML parser module
+lfs_package(
     name = "xml_parser",
-    cmd = """
-set -euo pipefail
-cd /sources/XML-Parser-2.47
-perl Makefile.PL
-make
-make install
-""",
+    srcs = ["@xml_parser_src//file"],
+    build_cmd = "make",
+    configure_cmd = "perl Makefile.PL",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make test",
     deps = [
         ":expat",
-        ":extract_xml_parser",
         ":perl",
     ],
 )
 
-# 8.45 Intltool - Internationalization tool
-lfs_chroot_extract_tarball(
-    name = "extract_intltool",
-    tarball_name = "intltool-0.51.0.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 43. Intltool - Internationalization tool
+lfs_package(
     name = "intltool",
-    cmd = """
-set -euo pipefail
-cd /sources/intltool-0.51.0
-sed -i 's:\\\\${:\\\\$\\{:' intltool-update.in
-./configure --prefix=/usr
-make
-make install
-install -v -Dm644 doc/I18N-HOWTO /usr/share/doc/intltool-0.51.0/I18N-HOWTO
-""",
-    deps = [
-        ":extract_intltool",
-        ":perl",
-        ":xml_parser",
-    ],
+    srcs = ["@intltool_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        sed -i 's:\\\\\\\\\\\\${:\\\\\\\\\\\\$\\\\\\\\\\\\{:' intltool-update.in
+        ./configure --prefix=/usr
+    """,
+    install_cmd = """
+        make install
+        install -v -Dm644 doc/I18N-HOWTO /usr/share/doc/intltool-0.51.0/I18N-HOWTO
+    """,
+    phase = "chroot",
+    deps = [":xml_parser"],
 )
 
-# 8.46 Autoconf - Automatic configure script builder
-lfs_chroot_extract_tarball(
-    name = "extract_autoconf",
-    tarball_name = "autoconf-2.72.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 44. Autoconf - Build configuration tool
+lfs_package(
     name = "autoconf",
-    cmd = """
-set -euo pipefail
-cd /sources/autoconf-2.72
-./configure --prefix=/usr
-make
-make install
-""",
+    srcs = ["@autoconf_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
     deps = [
-        ":extract_autoconf",
         ":m4",
         ":perl",
     ],
 )
 
-# 8.47 Automake - Makefile generator
-lfs_chroot_extract_tarball(
-    name = "extract_automake",
-    tarball_name = "automake-1.17.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 45. Automake - Makefile generator
+lfs_package(
     name = "automake",
-    cmd = """
-set -euo pipefail
-cd /sources/automake-1.17
-./configure --prefix=/usr --docdir=/usr/share/doc/automake-1.17
-make -j$(nproc)
-make install
-""",
-    deps = [
-        ":autoconf",
-        ":extract_automake",
-    ],
+    srcs = ["@automake_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr --docdir=/usr/share/doc/automake-1.17",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make -j$(($(nproc)>4?$(nproc):4)) check",
+    deps = [":autoconf"],
 )
 
-# 8.48 OpenSSL - SSL/TLS cryptography library
-lfs_chroot_extract_tarball(
-    name = "extract_openssl",
-    tarball_name = "openssl-3.3.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 46. OpenSSL - Cryptography library
+lfs_package(
     name = "openssl",
-    cmd = """
-set -euo pipefail
-cd /sources/openssl-3.3.1
-./config --prefix=/usr \
-         --openssldir=/etc/ssl \
-         --libdir=lib \
-         shared \
-         zlib-dynamic
-make
-sed -i '/INSTALL_LIBS/s/libcrypto.a libssl.a//' Makefile
-make MANSUFFIX=ssl install
-mv -v /usr/share/doc/openssl /usr/share/doc/openssl-3.3.1
-cp -vfr doc/* /usr/share/doc/openssl-3.3.1
-""",
-    deps = [
-        ":extract_openssl",
-        ":perl",
-    ],
+    srcs = ["@openssl_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./config --prefix=/usr \\
+            --openssldir=/etc/ssl \\
+            --libdir=lib \\
+            shared \\
+            zlib-dynamic
+    """,
+    install_cmd = """
+        sed -i '/INSTALL_LIBS/s/libcrypto.a libssl.a//' Makefile
+        make MANSUFFIX=ssl install
+        mv -v /usr/share/doc/openssl /usr/share/doc/openssl-3.3.1
+        cp -vfr doc/* /usr/share/doc/openssl-3.3.1
+    """,
+    phase = "chroot",
+    test_cmd = "HARNESS_JOBS=$(nproc) make test",
+    deps = [":zlib"],
 )
 
-# 8.49 Kmod - Kernel module tools
-lfs_chroot_extract_tarball(
-    name = "extract_kmod",
-    tarball_name = "kmod-33.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 47. Kmod - Kernel module tools
+lfs_package(
     name = "kmod",
-    cmd = """
-set -euo pipefail
-cd /sources/kmod-33
-./configure --prefix=/usr \
-            --sysconfdir=/etc \
-            --with-openssl \
-            --with-xz \
-            --with-zstd \
-            --with-zlib \
+    srcs = ["@kmod_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --sysconfdir=/etc \\
+            --with-openssl \\
+            --with-xz \\
+            --with-zstd \\
+            --with-zlib \\
             --disable-manpages
-make
-make install
+    """,
+    install_cmd = """
+        make install
 
-for target in depmod insmod modinfo modprobe rmmod; do
-  ln -sfv ../bin/kmod /usr/sbin/$target
-  rm -fv /usr/bin/$target
-done
-""",
+        for target in depmod insmod modinfo modprobe rmmod; do
+          ln -sfv ../bin/kmod /usr/sbin/$target
+          rm -fv /usr/bin/$target
+        done
+    """,
+    phase = "chroot",
     deps = [
-        ":extract_kmod",
         ":openssl",
         ":xz",
-        ":zlib",
         ":zstd",
     ],
 )
 
-# 8.50 Libelf - ELF object file access library
-lfs_chroot_extract_tarball(
-    name = "extract_libelf",
-    tarball_name = "elfutils-0.191.tar.bz2",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 48. Libelf - ELF library from elfutils
+lfs_package(
     name = "libelf",
-    cmd = """
-set -euo pipefail
-cd /sources/elfutils-0.191
-./configure --prefix=/usr \
-            --disable-debuginfod \
+    srcs = ["@libelf_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --disable-debuginfod \\
             --enable-libdebuginfod=dummy
-make
-make -C libelf install
-install -vm644 config/libelf.pc /usr/lib/pkgconfig
-rm /usr/lib/libelf.a
-""",
-    deps = [
-        ":extract_libelf",
-        ":glibc",
-    ],
+    """,
+    install_cmd = """
+        make -C libelf install
+        install -vm644 config/libelf.pc /usr/lib/pkgconfig
+        rm /usr/lib/libelf.a
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":zlib"],
 )
 
-# 8.51 Libffi - Foreign Function Interface library
-lfs_chroot_extract_tarball(
-    name = "extract_libffi",
-    tarball_name = "libffi-3.4.6.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 49. Libffi - Foreign function interface library
+lfs_package(
     name = "libffi",
-    cmd = """
-set -euo pipefail
-cd /sources/libffi-3.4.6
-./configure --prefix=/usr \
-            --disable-static \
+    srcs = ["@libffi_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --disable-static \\
             --with-gcc-arch=native
-make
-make install
-""",
-    deps = [
-        ":extract_libffi",
-        ":glibc",
-    ],
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gcc"],
 )
 
-# 8.52 Python - Programming language
-lfs_chroot_extract_tarball(
-    name = "extract_python",
-    tarball_name = "Python-3.12.5.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 50. Python - Programming language
+lfs_package(
     name = "python",
-    cmd = """
-set -euo pipefail
-cd /sources/Python-3.12.5
-./configure --prefix=/usr \
-            --enable-shared \
-            --with-system-expat \
+    srcs = ["@python_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --enable-shared \\
+            --with-system-expat \\
             --enable-optimizations
-make
-make install
-
-cat > /etc/pip.conf << 'PIPEOF'
+    """,
+    install_cmd = """
+        make install
+        cat > /etc/pip.conf << EOF
 [global]
 root-user-action = ignore
 disable-pip-version-check = true
-PIPEOF
-""",
+EOF
+    """,
+    phase = "chroot",
+    test_cmd = """
+        make test TESTOPTS="--timeout 120"
+    """,
     deps = [
         ":expat",
-        ":extract_python",
         ":libffi",
         ":openssl",
     ],
 )
 
-# 8.53 Flit-Core - Python build backend
-lfs_chroot_extract_tarball(
-    name = "extract_flit_core",
-    tarball_name = "flit_core-3.9.0.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 51. Flit-Core - Python build backend
+lfs_package(
     name = "flit_core",
-    cmd = """
-set -euo pipefail
-cd /sources/flit_core-3.9.0
-pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
-pip3 install --no-index --no-user --find-links dist flit_core
-""",
-    deps = [
-        ":extract_flit_core",
-        ":python",
-    ],
+    srcs = ["@flit_core_src//file"],
+    build_cmd = """
+        pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
+    """,
+    configure_cmd = "true",
+    install_cmd = """
+        pip3 install --no-index --no-user --find-links dist flit_core
+    """,
+    phase = "chroot",
+    deps = [":python"],
 )
 
-# 8.54 Wheel - Python wheel packaging
-lfs_chroot_extract_tarball(
-    name = "extract_wheel",
-    tarball_name = "wheel-0.44.0.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 52. Wheel - Python wheel packaging standard
+lfs_package(
     name = "wheel",
-    cmd = """
-set -euo pipefail
-cd /sources/wheel-0.44.0
-pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
-pip3 install --no-index --find-links=dist wheel
-""",
-    deps = [
-        ":extract_wheel",
-        ":flit_core",
-    ],
+    srcs = ["@wheel_src//file"],
+    build_cmd = """
+        pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
+    """,
+    configure_cmd = "true",
+    install_cmd = """
+        pip3 install --no-index --find-links=dist wheel
+    """,
+    phase = "chroot",
+    deps = [":python"],
 )
 
-# 8.55 Setuptools - Python package development
-lfs_chroot_extract_tarball(
-    name = "extract_setuptools",
-    tarball_name = "setuptools-72.2.0.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 53. Setuptools - Python package installer
+lfs_package(
     name = "setuptools",
-    cmd = """
-set -euo pipefail
-cd /sources/setuptools-72.2.0
-pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
-pip3 install --no-index --find-links dist setuptools
-""",
-    deps = [
-        ":extract_setuptools",
-        ":wheel",
-    ],
+    srcs = ["@setuptools_src//file"],
+    build_cmd = """
+        pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
+    """,
+    configure_cmd = "true",
+    install_cmd = """
+        pip3 install --no-index --find-links dist setuptools
+    """,
+    phase = "chroot",
+    deps = [":python"],
 )
 
-# 8.56 Ninja - Small build system
-lfs_chroot_extract_tarball(
-    name = "extract_ninja",
-    tarball_name = "ninja-1.12.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 54. Ninja - Build system
+lfs_package(
     name = "ninja",
-    cmd = """
-set -euo pipefail
-cd /sources/ninja-1.12.1
-export NINJAJOBS=$(nproc)
-sed -i '/int Guess/a \
-  int   j = 0;\
-  char* jobs = getenv( "NINJAJOBS" );\
-  if ( jobs != NULL ) j = atoi( jobs );\
-  if ( j > 0 ) return j;' src/ninja.cc
-python3 configure.py --bootstrap
-install -vm755 ninja /usr/bin/
-install -vDm644 misc/bash-completion /usr/share/bash-completion/completions/ninja
-install -vDm644 misc/zsh-completion  /usr/share/zsh/site-functions/_ninja
-""",
+    srcs = ["@ninja_src//file"],
+    build_cmd = "true",
+    configure_cmd = """
+        sed -i '/int Guess/a \\
+  int   j = 0;\\
+  char* jobs = getenv( "NINJAJOBS" );\\
+  if ( jobs != NULL ) j = atoi( jobs );\\
+  if ( j > 0 ) return j;\\
+' src/ninja.cc
+        python3 configure.py --bootstrap
+    """,
+    install_cmd = """
+        install -vm755 ninja /usr/bin/
+        install -vDm644 misc/bash-completion /usr/share/bash-completion/completions/ninja
+        install -vDm644 misc/zsh-completion  /usr/share/zsh/site-functions/_ninja
+    """,
+    phase = "chroot",
+    deps = [":python"],
+)
+
+# 55. Meson - Build system
+lfs_package(
+    name = "meson",
+    srcs = ["@meson_src//file"],
+    build_cmd = """
+        pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
+    """,
+    configure_cmd = "true",
+    install_cmd = """
+        pip3 install --no-index --find-links dist meson
+        install -vDm644 data/shell-completions/bash/meson /usr/share/bash-completion/completions/meson
+        install -vDm644 data/shell-completions/zsh/_meson /usr/share/zsh/site-functions/_meson
+    """,
+    phase = "chroot",
     deps = [
-        ":extract_ninja",
+        ":ninja",
         ":python",
     ],
 )
 
-# 8.57 Meson - Build system
-lfs_chroot_extract_tarball(
-    name = "extract_meson",
-    tarball_name = "meson-1.5.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "meson",
-    cmd = """
-set -euo pipefail
-cd /sources/meson-1.5.1
-pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
-pip3 install --no-index --find-links dist meson
-install -vDm644 data/shell-completions/bash/meson /usr/share/bash-completion/completions/meson
-install -vDm644 data/shell-completions/zsh/_meson /usr/share/zsh/site-functions/_meson
-""",
-    deps = [
-        ":extract_meson",
-        ":ninja",
-        ":setuptools",
-    ],
-)
-
-# 8.58 Coreutils - Core utilities
-lfs_chroot_extract_tarball(
-    name = "extract_coreutils",
-    tarball_name = "coreutils-9.5.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 56. Coreutils - Core utilities
+# Expected test failures: preserve-mode.sh, acl.sh (chroot only)
+# Requires tester user (depends on shadow)
+lfs_package(
     name = "coreutils",
-    cmd = """
-set -euo pipefail
-cd /sources/coreutils-9.5
-patch -Np1 -i ../coreutils-9.5-i18n-2.patch
-autoreconf -fiv
-FORCE_UNSAFE_CONFIGURE=1 ./configure \
-            --prefix=/usr \
+    srcs = ["@coreutils_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        patch -Np1 -i coreutils-9.5-i18n-2.patch
+        autoreconf -fiv
+        FORCE_UNSAFE_CONFIGURE=1 ./configure \\
+            --prefix=/usr \\
             --enable-no-install-program=kill,uptime
-make
-make install
-mv -v /usr/bin/chroot /usr/sbin
-mv -v /usr/share/man/man1/chroot.1 /usr/share/man/man8/chroot.8
-sed -i 's/"1"/"8"/' /usr/share/man/man8/chroot.8
-""",
+    """,
+    install_cmd = """
+        make install
+        mv -v /usr/bin/chroot /usr/sbin
+        mv -v /usr/share/man/man1/chroot.1 /usr/share/man/man8/chroot.8
+        sed -i 's/"1"/"8"/' /usr/share/man/man8/chroot.8
+    """,
+    patches = ["@coreutils_i18n_patch//file"],
+    phase = "chroot",
+    test_cmd = """
+        make NON_ROOT_USERNAME=tester check-root
+        groupadd -g 102 dummy -U tester
+        chown -R tester .
+        su tester -c "PATH=$PATH make -k RUN_EXPENSIVE_TESTS=yes check" < /dev/null
+        groupdel dummy
+    """,
     deps = [
         ":acl",
-        ":attr",
-        ":bash",
-        ":extract_coreutils",
-        ":glibc",
         ":gmp",
+        ":libcap",
+        ":shadow",
+    ],
+)
+
+# 57. Check - C unit testing framework
+lfs_package(
+    name = "check",
+    srcs = ["@check_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr --disable-static",
+    install_cmd = """
+        make docdir=/usr/share/doc/check-0.15.2 install
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gcc"],
+)
+
+################################################################################
+# Phase 5: System Services (20 packages)
+################################################################################
+
+# 58. diffutils - File comparison utilities
+lfs_package(
+    name = "diffutils",
+    srcs = ["@diffutils_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gcc"],
+)
+
+# 59. gawk - Pattern scanning and processing language
+lfs_package(
+    name = "gawk",
+    srcs = ["@gawk_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        sed -i 's/extras//' Makefile.in
+        ./configure --prefix=/usr
+    """,
+    install_cmd = """
+        rm -f /usr/bin/gawk-*
+        make install
+        ln -sv gawk.1 /usr/share/man/man1/awk.1
+        mkdir -pv /usr/share/doc/gawk-*
+        cp -v doc/{awkfoai.txt,*.{eps,pdf,jpg}} /usr/share/doc/gawk-* 2>/dev/null || true
+    """,
+    phase = "chroot",
+    test_cmd = """
+        chown -R tester .
+        su tester -c "PATH=$PATH make check"
+    """,
+    deps = [
+        ":gmp",
+        ":mpfr",
+    ],
+)
+
+# 60. findutils - File finding utilities
+lfs_package(
+    name = "findutils",
+    srcs = ["@findutils_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr --localstatedir=/var/lib/locate",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = """
+        chown -R tester .
+        su tester -c "PATH=$PATH make check"
+    """,
+    deps = [":gcc"],
+)
+
+# 61. groff - Document formatting system
+lfs_package(
+    name = "groff",
+    srcs = ["@groff_src//file"],
+    build_cmd = "make",
+    configure_cmd = "PAGE=letter ./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
+    deps = [":gcc"],
+)
+
+# 62. grub - GRand Unified Bootloader
+lfs_package(
+    name = "grub",
+    srcs = ["@grub_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        unset {C,CPP,CXX,LD}FLAGS
+        echo depends bli part_gpt > grub-core/extra_deps.lst
+        ./configure --prefix=/usr \\
+            --sysconfdir=/etc \\
+            --disable-efiemu \\
+            --disable-werror
+    """,
+    install_cmd = """
+        make install
+        mv -v /etc/bash_completion.d/grub /usr/share/bash-completion/completions
+    """,
+    phase = "chroot",
+    deps = [":gcc"],
+)
+
+# 63. gzip - Compression utilities
+lfs_package(
+    name = "gzip",
+    srcs = ["@gzip_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gcc"],
+)
+
+# 64. iproute2 - IP routing utilities
+lfs_package(
+    name = "iproute2",
+    srcs = ["@iproute2_src//file"],
+    build_cmd = "make NETNS_RUN_DIR=/run/netns",
+    configure_cmd = """
+        sed -i /ARPD/d Makefile
+        rm -fv man/man8/arpd.8
+    """,
+    install_cmd = """
+        make SBINDIR=/usr/sbin install
+        mkdir -pv /usr/share/doc/iproute2-*
+        cp -v COPYING README* /usr/share/doc/iproute2-* 2>/dev/null || true
+    """,
+    phase = "chroot",
+    deps = [":libelf"],
+)
+
+# 65. kbd - Keyboard utilities
+lfs_package(
+    name = "kbd",
+    srcs = [
+        "@kbd_backspace_patch//file",
+        "@kbd_src//file",
+    ],
+    build_cmd = "make",
+    configure_cmd = """
+        patch -Np1 -i ../kbd-*-backspace-1.patch
+        sed -i '/RESIZECONS_PROGS=/s/yes/no/' configure
+        sed -i 's/resizecons.8 //' docs/man/man8/Makefile.in
+        ./configure --prefix=/usr --disable-vlock
+    """,
+    install_cmd = """
+        make install
+        cp -R -v docs/doc -T /usr/share/doc/kbd-* 2>/dev/null || true
+    """,
+    phase = "chroot",
+    deps = [":gcc"],
+)
+
+# 66. libpipeline - Pipeline manipulation library
+lfs_package(
+    name = "libpipeline",
+    srcs = ["@libpipeline_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gcc"],
+)
+
+# 67. make - Build automation tool
+lfs_package(
+    name = "make",
+    srcs = ["@make_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = """
+        chown -R tester .
+        su tester -c "PATH=$PATH make check"
+    """,
+    deps = [":gcc"],
+)
+
+# 68. patch - Apply diff files to originals
+lfs_package(
+    name = "patch",
+    srcs = ["@patch_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":gcc"],
+)
+
+# 69. tar - Archiving utility
+lfs_package(
+    name = "tar",
+    srcs = ["@tar_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        FORCE_UNSAFE_CONFIGURE=1 \\
+        ./configure --prefix=/usr
+    """,
+    install_cmd = """
+        make install
+        make -C doc install-html docdir=/usr/share/doc/tar-*
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":acl"],
+)
+
+# 70. texinfo - Documentation system
+lfs_package(
+    name = "texinfo",
+    srcs = ["@texinfo_src//file"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = """
+        make install
+        make TEXMF=/usr/share/texmf install-tex
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":perl"],
+)
+
+# 71. vim - Text editor
+lfs_package(
+    name = "vim",
+    srcs = ["@vim_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        echo '#define SYS_VIMRC_FILE "/etc/vimrc"' >> src/feature.h
+        ./configure --prefix=/usr
+    """,
+    install_cmd = """
+        make install
+        ln -sv vim /usr/bin/vi
+        for L in /usr/share/man/{,*/}man1/vim.1; do
+            ln -sv vim.1 $(dirname $L)/vi.1
+        done
+        ln -sv ../vim/vim*/doc /usr/share/doc/vim-*
+    """,
+    phase = "chroot",
+    test_cmd = """
+        chown -R tester .
+        su tester -c "TERM=xterm-256color LANG=en_US.UTF-8 make -j1 test" &> vim-test.log
+    """,
+    deps = [":ncurses"],
+)
+
+# 72. markupsafe - Python module with C extension
+lfs_package(
+    name = "markupsafe",
+    srcs = ["@markupsafe_src//file"],
+    build_cmd = "pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD",
+    configure_cmd = "true",
+    install_cmd = "pip3 install --no-index --no-user --find-links dist Markupsafe",
+    phase = "chroot",
+    deps = [":python"],
+)
+
+# 73. jinja2 - Python templating module
+lfs_package(
+    name = "jinja2",
+    srcs = ["@jinja2_src//file"],
+    build_cmd = "pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD",
+    configure_cmd = "true",
+    install_cmd = "pip3 install --no-index --no-user --find-links dist Jinja2",
+    phase = "chroot",
+    deps = [
+        ":markupsafe",
+        ":python",
+    ],
+)
+
+# 74. systemd - System and service manager
+lfs_package(
+    name = "systemd",
+    srcs = [
+        "@systemd_man_pages//file",
+        "@systemd_src//file",
+    ],
+    build_cmd = """
+        cd build
+        ninja
+    """,
+    configure_cmd = """
+        sed -i -e 's/GROUP="render"/GROUP="video"/' \\
+               -e 's/GROUP="sgx", //' rules.d/50-udev-default.rules.in
+
+        mkdir -p build
+        cd build
+
+        meson setup .. \\
+              --prefix=/usr \\
+              --buildtype=release \\
+              -D default-dnssec=no \\
+              -D firstboot=false \\
+              -D install-tests=false \\
+              -D ldconfig=false \\
+              -D sysusers=false \\
+              -D rpmmacrosdir=no \\
+              -D homed=disabled \\
+              -D userdb=false \\
+              -D man=disabled \\
+              -D mode=release \\
+              -D pamconfdir=no \\
+              -D dev-kvm-mode=0660 \\
+              -D nobody-group=nogroup \\
+              -D sysupdate=disabled \\
+              -D ukify=disabled \\
+              -D docdir=/usr/share/doc/systemd-*
+    """,
+    install_cmd = """
+        cd build
+        ninja install
+        tar -xf ../../systemd-man-pages-*.tar.xz \\
+            --no-same-owner --strip-components=1 \\
+            -C /usr/share/man
+        systemd-machine-id-setup
+        systemctl preset-all
+    """,
+    phase = "chroot",
+    test_cmd = """
+        echo 'NAME="Linux From Scratch"' > /etc/os-release
+        cd build
+        ninja test || true
+    """,
+    deps = [
+        ":jinja2",
+        ":kmod",
+        ":libcap",
+        ":meson",
+        ":ninja",
         ":openssl",
     ],
 )
 
-# 8.59 Check - Unit testing framework
-lfs_chroot_extract_tarball(
-    name = "extract_check",
-    tarball_name = "check-0.15.2.tar.gz",
-    deps = [":stage_ch8_sources"],
+# 75. dbus - Message bus system
+lfs_package(
+    name = "dbus",
+    srcs = ["@dbus_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --sysconfdir=/etc \\
+            --localstatedir=/var \\
+            --runstatedir=/run \\
+            --enable-user-session \\
+            --disable-static \\
+            --disable-doxygen-docs \\
+            --disable-xml-docs \\
+            --docdir=/usr/share/doc/dbus-* \\
+            --with-system-socket=/run/dbus/system_bus_socket
+    """,
+    install_cmd = """
+        make install
+        ln -sfv /etc/machine-id /var/lib/dbus
+    """,
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [":systemd"],
 )
 
-lfs_chroot_step(
-    name = "check",
-    cmd = """
-set -euo pipefail
-cd /sources/check-0.15.2
-./configure --prefix=/usr --disable-static
-make
-make docdir=/usr/share/doc/check-0.15.2 install
-""",
+# 76. procps - Process monitoring utilities (procps-ng)
+lfs_package(
+    name = "procps",
+    srcs = ["@procps_ng_src//file"],
+    build_cmd = "make src_w_LDADD='$(LDADD) -lsystemd'",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --docdir=/usr/share/doc/procps-ng-* \\
+            --disable-static \\
+            --disable-kill \\
+            --with-systemd
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = """
+        chown -R tester .
+        su tester -c "PATH=$PATH make check"
+    """,
     deps = [
-        ":extract_check",
-        ":glibc",
-    ],
-)
-
-###############################################################################
-# Phase 5: System Services (20 packages)
-###############################################################################
-
-# 8.60 Diffutils - Utilities for comparing files
-lfs_chroot_extract_tarball(
-    name = "extract_diffutils",
-    tarball_name = "diffutils-3.10.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "diffutils",
-    cmd = """
-set -euo pipefail
-cd /sources/diffutils-3.10
-./configure --prefix=/usr
-make
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_diffutils",
-        ":glibc",
-    ],
-)
-
-# 8.61 Gawk - GNU Awk
-lfs_chroot_extract_tarball(
-    name = "extract_gawk",
-    tarball_name = "gawk-5.3.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "gawk",
-    cmd = """
-set -euo pipefail
-cd /sources/gawk-5.3.0
-sed -i 's/extras//' Makefile.in
-./configure --prefix=/usr
-make
-rm -f /usr/bin/gawk-5.3.0
-make install
-ln -sv gawk.1 /usr/share/man/man1/awk.1
-mkdir -pv /usr/share/doc/gawk-5.3.0
-cp -v doc/{awkforai.txt,*.{eps,pdf,jpg}} /usr/share/doc/gawk-5.3.0
-""",
-    deps = [
-        ":bash",
-        ":extract_gawk",
-        ":glibc",
-    ],
-)
-
-# 8.62 Findutils - Directory traversal utilities
-lfs_chroot_extract_tarball(
-    name = "extract_findutils",
-    tarball_name = "findutils-4.10.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "findutils",
-    cmd = """
-set -euo pipefail
-cd /sources/findutils-4.10.0
-./configure --prefix=/usr --localstatedir=/var/lib/locate
-make
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_findutils",
-        ":glibc",
-    ],
-)
-
-# 8.63 Groff - Document formatting system
-lfs_chroot_extract_tarball(
-    name = "extract_groff",
-    tarball_name = "groff-1.23.0.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "groff",
-    cmd = """
-set -euo pipefail
-cd /sources/groff-1.23.0
-PAGE=letter ./configure --prefix=/usr
-make
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_groff",
-        ":gcc",
-        ":glibc",
-    ],
-)
-
-# 8.64 GRUB - Bootloader
-lfs_chroot_extract_tarball(
-    name = "extract_grub",
-    tarball_name = "grub-2.12.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "grub",
-    cmd = """
-set -euo pipefail
-cd /sources/grub-2.12
-unset {C,CPP,CXX,LD}FLAGS
-echo depends bli part_gpt > grub-core/extra_deps.lst
-./configure --prefix=/usr \
-            --sysconfdir=/etc \
-            --disable-efiemu \
-            --disable-werror
-make
-make install
-mv -v /etc/bash_completion.d/grub /usr/share/bash-completion/completions
-""",
-    deps = [
-        ":bash",
-        ":extract_grub",
-        ":glibc",
-    ],
-)
-
-# 8.65 Gzip - Compression utility
-lfs_chroot_extract_tarball(
-    name = "extract_gzip",
-    tarball_name = "gzip-1.13.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "gzip",
-    cmd = """
-set -euo pipefail
-cd /sources/gzip-1.13
-./configure --prefix=/usr
-make
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_gzip",
-        ":glibc",
-    ],
-)
-
-# 8.66 IPRoute2 - Networking utilities
-lfs_chroot_extract_tarball(
-    name = "extract_iproute2",
-    tarball_name = "iproute2-6.10.0.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "iproute2",
-    cmd = """
-set -euo pipefail
-cd /sources/iproute2-6.10.0
-sed -i /ARPD/d Makefile
-rm -fv man/man8/arpd.8
-make NETNS_RUN_DIR=/run/netns
-make SBINDIR=/usr/sbin install
-mkdir -pv /usr/share/doc/iproute2-6.10.0
-cp -v COPYING README* /usr/share/doc/iproute2-6.10.0
-""",
-    deps = [
-        ":bash",
-        ":extract_iproute2",
-        ":glibc",
-        ":libelf",
-    ],
-)
-
-# 8.67 Kbd - Keyboard utilities
-lfs_chroot_extract_tarball(
-    name = "extract_kbd",
-    tarball_name = "kbd-2.6.4.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "kbd",
-    cmd = """
-set -euo pipefail
-cd /sources/kbd-2.6.4
-patch -Np1 -i ../kbd-2.6.4-backspace-1.patch
-sed -i '/RESIZECONS_PROGS=/s/yes/no/' configure
-sed -i 's/resizecons.8 //' docs/man/man8/Makefile.in
-./configure --prefix=/usr --disable-vlock
-make
-make install
-cp -R -v docs/doc -T /usr/share/doc/kbd-2.6.4
-""",
-    deps = [
-        ":bash",
-        ":extract_kbd",
-        ":glibc",
-    ],
-)
-
-# 8.68 Libpipeline - Pipeline manipulation library
-lfs_chroot_extract_tarball(
-    name = "extract_libpipeline",
-    tarball_name = "libpipeline-1.5.7.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "libpipeline",
-    cmd = """
-set -euo pipefail
-cd /sources/libpipeline-1.5.7
-./configure --prefix=/usr
-make
-make install
-""",
-    deps = [
-        ":extract_libpipeline",
-        ":glibc",
-    ],
-)
-
-# 8.69 Make - Build automation tool
-lfs_chroot_extract_tarball(
-    name = "extract_make",
-    tarball_name = "make-4.4.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "make",
-    cmd = """
-set -euo pipefail
-cd /sources/make-4.4.1
-./configure --prefix=/usr
-make
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_make",
-        ":glibc",
-    ],
-)
-
-# 8.70 Patch - Patch application utility
-lfs_chroot_extract_tarball(
-    name = "extract_patch",
-    tarball_name = "patch-2.7.6.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "patch",
-    cmd = """
-set -euo pipefail
-cd /sources/patch-2.7.6
-./configure --prefix=/usr
-make
-make install
-""",
-    deps = [
-        ":bash",
-        ":extract_patch",
-        ":glibc",
-    ],
-)
-
-# 8.71 Tar - Archiving utility
-lfs_chroot_extract_tarball(
-    name = "extract_tar",
-    tarball_name = "tar-1.35.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "tar",
-    cmd = """
-set -euo pipefail
-cd /sources/tar-1.35
-FORCE_UNSAFE_CONFIGURE=1 ./configure --prefix=/usr
-make
-make install
-make -C doc install-html docdir=/usr/share/doc/tar-1.35
-""",
-    deps = [
-        ":bash",
-        ":extract_tar",
-        ":glibc",
-    ],
-)
-
-# 8.72 Texinfo - Documentation system
-lfs_chroot_extract_tarball(
-    name = "extract_texinfo",
-    tarball_name = "texinfo-7.1.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "texinfo",
-    cmd = """
-set -euo pipefail
-cd /sources/texinfo-7.1
-./configure --prefix=/usr
-make
-make install
-make TEXMF=/usr/share/texmf install-tex
-""",
-    deps = [
-        ":bash",
-        ":extract_texinfo",
-        ":glibc",
-        ":perl",
-    ],
-)
-
-# 8.73 Vim - Text editor
-lfs_chroot_extract_tarball(
-    name = "extract_vim",
-    tarball_name = "vim-9.1.0660.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "vim",
-    cmd = """
-set -euo pipefail
-cd /sources/vim-9.1.0660
-echo '#define SYS_VIMRC_FILE "/etc/vimrc"' >> src/feature.h
-./configure --prefix=/usr
-make
-make install
-ln -sv vim /usr/bin/vi
-for L in /usr/share/man/{,*/}man1/vim.1; do
-    ln -sv vim.1 $(dirname $L)/vi.1
-done
-ln -sv ../vim/vim91/doc /usr/share/doc/vim-9.1.0660
-cat > /etc/vimrc << 'VIMEOF'
-" Begin /etc/vimrc
-
-" Ensure defaults are set before customizing settings, not after
-source $VIMRUNTIME/defaults.vim
-let skip_defaults_vim=1
-
-set nocompatible
-set backspace=2
-set mouse=
-syntax on
-if (&term == "xterm") || (&term == "putty")
-  set background=dark
-endif
-
-" End /etc/vimrc
-VIMEOF
-""",
-    deps = [
-        ":bash",
-        ":extract_vim",
-        ":glibc",
         ":ncurses",
+        ":systemd",
     ],
 )
 
-# 8.74 MarkupSafe - Python package
-lfs_chroot_extract_tarball(
-    name = "extract_markupsafe",
-    tarball_name = "MarkupSafe-2.1.5.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "markupsafe",
-    cmd = """
-set -euo pipefail
-cd /sources/MarkupSafe-2.1.5
-pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
-pip3 install --no-index --no-user --find-links dist Markupsafe
-""",
-    deps = [
-        ":extract_markupsafe",
-        ":python",
-    ],
-)
-
-# 8.75 Jinja2 - Python templating engine
-lfs_chroot_extract_tarball(
-    name = "extract_jinja2",
-    tarball_name = "jinja2-3.1.4.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "jinja2",
-    cmd = """
-set -euo pipefail
-cd /sources/jinja2-3.1.4
-pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
-pip3 install --no-index --no-user --find-links dist Jinja2
-""",
-    deps = [
-        ":extract_jinja2",
-        ":markupsafe",
-    ],
-)
-
-# 8.76 Systemd - System and service manager (SKIPPED - sysvinit build)
-# 8.77 D-Bus - Message bus system (SKIPPED - systemd dependency)
-
-# 8.78 Man-DB - Manual page database
-lfs_chroot_extract_tarball(
-    name = "extract_man_db",
-    tarball_name = "man-db-2.12.1.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 77. man_db - Manual pager utilities
+lfs_package(
     name = "man_db",
-    cmd = """
-set -euo pipefail
-cd /sources/man-db-2.12.1
-./configure --prefix=/usr \
-            --docdir=/usr/share/doc/man-db-2.12.1 \
-            --sysconfdir=/etc \
-            --disable-setuid \
-            --enable-cache-owner=bin \
-            --with-browser=/usr/bin/lynx \
-            --with-vgrind=/usr/bin/vgrind \
+    srcs = ["@man_db_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --docdir=/usr/share/doc/man-db-* \\
+            --sysconfdir=/etc \\
+            --disable-setuid \\
+            --enable-cache-owner=bin \\
+            --with-browser=/usr/bin/lynx \\
+            --with-vgrind=/usr/bin/vgrind \\
             --with-grap=/usr/bin/grap
-make
-make install
-""",
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
     deps = [
-        ":extract_man_db",
         ":gdbm",
-        ":groff",
-        ":less",
         ":libpipeline",
     ],
 )
 
-# 8.79 Procps-ng - Process monitoring utilities
-lfs_chroot_extract_tarball(
-    name = "extract_procps_ng",
-    tarball_name = "procps-ng-4.0.4.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
+################################################################################
+# Phase 6: Final Packages (2 packages)
+################################################################################
 
-lfs_chroot_step(
-    name = "procps_ng",
-    cmd = """
-set -euo pipefail
-cd /sources/procps-ng-4.0.4
-./configure --prefix=/usr \
-            --docdir=/usr/share/doc/procps-ng-4.0.4 \
-            --disable-static \
-            --disable-kill
-make
-make install
-""",
-    deps = [
-        ":extract_procps_ng",
-        ":glibc",
-        ":ncurses",
-    ],
-)
-
-###############################################################################
-# Phase 6: Final Packages (3 packages)
-###############################################################################
-
-# 8.80 Util-linux - System utilities
-lfs_chroot_extract_tarball(
-    name = "extract_util_linux",
-    tarball_name = "util-linux-2.40.2.tar.xz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 78. util_linux - Miscellaneous system utilities
+lfs_package(
     name = "util_linux",
-    cmd = """
-set -euo pipefail
-cd /sources/util-linux-2.40.2
-./configure --bindir=/usr/bin \
-            --libdir=/usr/lib \
-            --runstatedir=/run \
-            --sbindir=/usr/sbin \
-            --disable-chfn-chsh \
-            --disable-login \
-            --disable-nologin \
-            --disable-su \
-            --disable-setpriv \
-            --disable-runuser \
-            --disable-pylibmount \
-            --disable-static \
-            --disable-liblastlog2 \
-            --without-python \
-            ADJTIME_PATH=/var/lib/hwclock/adjtime \
-            --docdir=/usr/share/doc/util-linux-2.40.2
-make
-make install
-""",
+    srcs = ["@util_linux_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        ./configure --bindir=/usr/bin \\
+            --libdir=/usr/lib \\
+            --runstatedir=/run \\
+            --sbindir=/usr/sbin \\
+            --disable-chfn-chsh \\
+            --disable-login \\
+            --disable-nologin \\
+            --disable-su \\
+            --disable-setpriv \\
+            --disable-runuser \\
+            --disable-pylibmount \\
+            --disable-liblastlog2 \\
+            --disable-static \\
+            --without-python \\
+            ADJTIME_PATH=/var/lib/hwclock/adjtime \\
+            --docdir=/usr/share/doc/util-linux-*
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = """
+        touch /etc/fstab
+        chown -R tester .
+        su tester -c "make -k check"
+    """,
     deps = [
-        ":extract_util_linux",
-        ":glibc",
         ":libcap",
         ":ncurses",
+        ":systemd",
     ],
 )
 
-# 8.81 E2fsprogs - Ext2/3/4 filesystem utilities
-lfs_chroot_extract_tarball(
-    name = "extract_e2fsprogs",
-    tarball_name = "e2fsprogs-1.47.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
+# 79. e2fsprogs - Ext2/3/4 filesystem utilities
+lfs_package(
     name = "e2fsprogs",
-    cmd = """
-set -euo pipefail
-cd /sources/e2fsprogs-1.47.1
-mkdir -v build
-cd build
-../configure --prefix=/usr \
-             --sysconfdir=/etc \
-             --enable-elf-shlibs \
-             --disable-libblkid \
-             --disable-libuuid \
-             --disable-uuidd \
+    srcs = ["@e2fsprogs_src//file"],
+    build_cmd = """
+        cd build
+        make
+    """,
+    configure_cmd = """
+        mkdir -v build
+        cd build
+        ../configure --prefix=/usr \\
+             --sysconfdir=/etc \\
+             --enable-elf-shlibs \\
+             --disable-libblkid \\
+             --disable-libuuid \\
+             --disable-uuidd \\
              --disable-fsck
-make
-make install
-rm -fv /usr/lib/{libcom_err,libe2p,libext2fs,libss}.a
-gunzip -v /usr/share/info/libext2fs.info.gz
-install-info --dir-file=/usr/share/info/dir /usr/share/info/libext2fs.info
-makeinfo -o doc/com_err.info ../lib/et/com_err.texinfo
-install -v -m644 doc/com_err.info /usr/share/info
-install-info --dir-file=/usr/share/info/dir /usr/share/info/com_err.info
-sed 's/metadata_csum_seed,//' -i /etc/mke2fs.conf
-""",
-    deps = [
-        ":extract_e2fsprogs",
+    """,
+    install_cmd = """
+        cd build
+        make install
+        rm -fv /usr/lib/{libcom_err,libe2p,libext2fs,libss}.a
+        gunzip -v /usr/share/info/libext2fs.info.gz
+        install-info --dir-file=/usr/share/info/dir /usr/share/info/libext2fs.info
+        makeinfo -o doc/com_err.info ../lib/et/com_err.texinfo
+        install -v -m644 doc/com_err.info /usr/share/info
+        install-info --dir-file=/usr/share/info/dir /usr/share/info/com_err.info
+    """,
+    phase = "chroot",
+    test_cmd = """
+        cd build
+        make check
+    """,
+    deps = [":util_linux"],
+)
+
+###############################################################################
+# Build All Target
+###############################################################################
+
+filegroup(
+    name = "ch8_all",
+    srcs = [
+        # Phase 2: Core Foundation (17 packages)
+        ":man_pages",
+        ":iana_etc",
         ":glibc",
+        ":zlib",
+        ":bzip2",
+        ":xz",
+        ":lz4",
+        ":zstd",
+        ":file",
+        ":readline",
+        ":m4",
+        ":bc",
+        ":flex",
+        ":tcl",
+        ":expect",
+        ":dejagnu",
+        ":pkgconf",
+        # Phase 3: Toolchain & Security (16 packages)
+        ":binutils",
+        ":gmp",
+        ":mpfr",
+        ":mpc",
+        ":attr",
+        ":acl",
+        ":libcap",
+        ":libxcrypt",
+        ":shadow",
+        ":gcc",
+        ":ncurses",
+        ":sed",
+        ":psmisc",
+        ":gettext",
+        ":bison",
+        ":grep",
+        # Phase 4: Build System & Python (24 packages)
+        ":bash",
+        ":libtool",
+        ":gdbm",
+        ":gperf",
+        ":expat",
+        ":inetutils",
+        ":less",
+        ":perl",
+        ":xml_parser",
+        ":intltool",
+        ":autoconf",
+        ":automake",
+        ":openssl",
+        ":kmod",
+        ":libelf",
+        ":libffi",
+        ":python",
+        ":flit_core",
+        ":wheel",
+        ":setuptools",
+        ":ninja",
+        ":meson",
+        ":coreutils",
+        ":check",
+        # Phase 5: System Services (20 packages)
+        ":diffutils",
+        ":gawk",
+        ":findutils",
+        ":groff",
+        ":grub",
+        ":gzip",
+        ":iproute2",
+        ":kbd",
+        ":libpipeline",
+        ":make",
+        ":patch",
+        ":tar",
+        ":texinfo",
+        ":vim",
+        ":markupsafe",
+        ":jinja2",
+        ":systemd",
+        ":dbus",
+        ":procps",
+        ":man_db",
+        # Phase 6: Final Packages (2 packages)
         ":util_linux",
-    ],
-)
-
-# 8.83 Sysklogd - System logging daemon
-lfs_chroot_extract_tarball(
-    name = "extract_sysklogd",
-    tarball_name = "sysklogd-2.6.1.tar.gz",
-    deps = [":stage_ch8_sources"],
-)
-
-lfs_chroot_step(
-    name = "sysklogd",
-    cmd = """
-set -euo pipefail
-cd /sources/sysklogd-2.6.1
-./configure --prefix=/usr \
-            --sysconfdir=/etc \
-            --runstatedir=/run \
-            --without-logger
-make
-make install
-cat > /etc/syslog.conf << 'SYSLOGEOF'
-# Begin /etc/syslog.conf
-
-auth,authpriv.* -/var/log/auth.log
-*.*;auth,authpriv.none -/var/log/sys.log
-daemon.* -/var/log/daemon.log
-kern.* -/var/log/kern.log
-mail.* -/var/log/mail.log
-user.* -/var/log/user.log
-*.emerg *
-
-# End /etc/syslog.conf
-SYSLOGEOF
-""",
-    deps = [
-        ":extract_sysklogd",
-        ":glibc",
+        ":e2fsprogs",
     ],
 )

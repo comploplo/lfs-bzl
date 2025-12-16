@@ -331,7 +331,7 @@ http_file(
     name = "expat_src",
     downloaded_file_path = "expat-2.6.2.tar.xz",
     sha256 = "ee14b4c5d8908b1bec37ad937607eab183d4d9806a08adee472c3c3121d27364",
-    urls = ["https://prdownloads.sourceforge.net/expat/expat-2.6.2.tar.xz"],
+    urls = ["https://github.com/libexpat/libexpat/releases/download/R_2_6_2/expat-2.6.2.tar.xz"],
 )
 
 http_file(
@@ -510,6 +510,13 @@ http_file(
 )
 
 http_file(
+    name = "systemd_man_pages",
+    downloaded_file_path = "systemd-man-pages-256.4.tar.xz",
+    sha256 = "dceb4cc699b3801c38d99f88618ca7e7f7e23ee6016a8b7eef3ed361d852d340",
+    urls = ["https://anduin.linuxfromscratch.org/LFS/systemd-man-pages-256.4.tar.xz"],
+)
+
+http_file(
     name = "dbus_src",
     downloaded_file_path = "dbus-1.14.10.tar.xz",
     sha256 = "ba1f21d2bd9d339da2d4aa8780c09df32fea87998b73da24f49ab9df1e36a50f",
@@ -542,6 +549,13 @@ http_file(
     downloaded_file_path = "sysklogd-2.6.1.tar.gz",
     sha256 = "e35d5c5f55019976302ac9818890bd6b6858db257506f0e9afaa718a8dee9cc3",
     urls = ["https://github.com/troglobit/sysklogd/releases/download/v2.6.1/sysklogd-2.6.1.tar.gz"],
+)
+
+http_file(
+    name = "tzdata_src",
+    downloaded_file_path = "tzdata2024a.tar.gz",
+    sha256 = "0d0434459acbd2059a7a8da1f3304a84a86591f6ed69c6248fffa502b6edffe3",
+    urls = ["https://www.iana.org/time-zones/repository/releases/tzdata2024a.tar.gz"],
 )
 
 # glibc_src already defined above for Chapter 5/6 (same version 2.40)

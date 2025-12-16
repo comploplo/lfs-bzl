@@ -557,6 +557,253 @@ echo "6.4.0" > .bazelversion
 
 ______________________________________________________________________
 
+## 🧪 Expected Test Failures
+
+This section documents test failures that are expected and acceptable according to the LFS 12.2 book. Understanding these expected failures helps distinguish between normal behavior and actual problems.
+
+### Critical Test Suites
+
+#### Glibc Tests (CRITICAL - DO NOT SKIP)
+
+**Total Tests**: Over 5000 tests
+
+**Known Acceptable Failures**:
+
+- `io/tst-lchmod` - Always fails in chroot environment (passes in complete system)
+- `nss/tst-nss-files-hosts-multi` - May timeout on slow systems
+- `nptl/tst-thread-affinity*` - May timeout on slow systems
+- Tests may fail on very old CPUs or kernels
+
+**Debugging Timeout Failures**:
+
+```bash
+# Check for timeout failures in test output
+grep "Timed out" bazel-bin/packages/chapter_08/glibc_test.log
+
+# Re-run specific test with extended timeout
+TIMEOUTFACTOR=10 make test t=nss/tst-nss-files-hosts-multi
+```
+
+**Acceptable Result**: A few failures out of 5000+ tests is normal and acceptable (up to ~10-20 failures).
+
+**When to Worry**: Contact LFS support if more than 10-20 tests fail, or if core functionality tests (not just timeouts) fail.
+
+#### GCC Tests (IMPORTANT - Long Running)
+
+**Known Issues**:
+
+- Test suite can take several hours to complete (1-4 hours depending on CPU)
+- Some tests require specific CPU features and may be skipped
+- No critical failures expected with proper configuration
+
+**Test Summary**:
+
+```bash
+# GCC provides a test summary tool
+../contrib/test_summary
+```
+
+**Expected Results**: Most tests pass. Some tests may be unsupported/skipped depending on CPU features (AVX, SSE, etc.) - this is normal and expected.
+
+#### Binutils Tests (CRITICAL - MANDATORY)
+
+**Known Acceptable Failures**:
+
+- **12 tests in the gold test suite** fail when using `--enable-default-pie` and `--enable-default-ssp`
+- This is expected per LFS book and does not indicate a problem
+
+**When to Worry**: Contact LFS support if more than 12 tests fail in gold test suite, or if any tests fail outside the gold test suite.
+
+### Package-Specific Test Issues
+
+#### Autoconf
+
+- Test suite broken by bash-5 and libtool-2.4.3
+- Some failures expected but build is still usable
+
+#### Coreutils
+
+**Known Acceptable Failures in Chroot**:
+
+- `preserve-mode.sh` - Fails in chroot (passes in complete system)
+- `acl.sh` - Fails in chroot (passes in complete system)
+
+**Root vs Non-Root**:
+
+- Root tests run first: `make NON_ROOT_USERNAME=tester check-root`
+- Non-root tests run as tester user
+
+#### E2fsprogs
+
+**Known Issues**:
+
+- `m_assume_storage_prezeroed` may fail
+- One test requires at least 256MB RAM
+
+#### Expect
+
+**Critical Pre-Test**:
+
+```bash
+# Verify PTY support before running tests
+python3 -c 'from pty import spawn; spawn(["echo", "ok"])'
+```
+
+- If this fails, Expect tests and all dependent test suites will fail
+- PTY issues must be resolved before continuing
+
+#### GMP
+
+**Test Validation**:
+
+```bash
+# Count passing tests
+awk '/# PASS:/{total+=$3} ; END{print total}' gmp-check-log
+```
+
+- **Minimum**: At least 199 tests must pass
+- If fewer pass, may need to reconfigure with `--host=none-linux-gnu`
+
+#### Inetutils
+
+**Known Failures in Chroot**:
+
+- `libls.sh` - Fails in chroot (passes in complete system)
+- `ping-localhost.sh` - Fails if host kernel doesn't have loopback configured
+
+#### Libtool
+
+**Known Issues**:
+
+- 5 tests fail due to circular dependency (pass if rechecked after library installation)
+- 2 tests trigger POSIX regex warnings in gawk
+
+#### OpenSSL
+
+**Known Failures**:
+
+- `30-test_afalg.t` - Fails if host kernel lacks `CONFIG_CRYPTO_USER_API_HASH`
+- This is a kernel configuration issue, not an OpenSSL problem
+
+#### Python
+
+**Test Behavior**:
+
+- Tests may hang indefinitely without timeout
+- Use `TESTOPTS="--timeout 120"` to set 2-minute timeout per test
+- Some tests are flaky and will automatically re-run
+- A few failures/retries are normal
+
+#### Systemd
+
+**Known Failures in Chroot**:
+
+- `test-namespace` - Always fails in chroot
+- Other failures depend on kernel configuration options
+- Chroot limitations prevent some systemd features from working
+
+#### Util-linux
+
+**Pre-Test Adjustments**:
+
+```bash
+# Disable problematic test
+sed -i '/test_mkfds/s/^/#/' tests/helpers/Makemodule.am
+```
+
+**Known Failures**:
+
+- Hardlink tests fail without `CONFIG_CRYPTO_USER_API_HASH`
+- lsfd inotify test fails without `CONFIG_NETLINK_DIAG`
+
+**Warning**: Running tests as root can be harmful to the system. Tests require `CONFIG_SCSI_DEBUG` as module. Always run as tester user: `su tester -c "make -k check"`
+
+#### Vim
+
+**Test Output**:
+
+- Test output is binary data - must redirect to file
+- Look for "ALL TESTS PASSED" message in output file
+
+```bash
+su tester -c "TERM=xterm-256color LANG=en_US.UTF-8 make -j1 test" &> vim-test.log
+grep "ALL TESTS PASSED" vim-test.log
+```
+
+#### Zstd
+
+**Test Output**:
+
+- Several places in test output show warnings
+- There should be no actual test failures
+
+### Packages That Cannot Test in Chroot
+
+- **Acl**: Tests require extended attributes filesystem support (not available in standard chroot)
+- **Kmod**: Test suite requires raw kernel headers (cannot run in chroot)
+- **Meson**: Test suite requires packages outside LFS scope
+- **Ncurses**: Test suite can only be run after installation (tests reside in `test/` directory)
+- **Ninja**: Tests cannot run in chroot environment (require cmake)
+
+### General Test Guidelines
+
+1. **Critical Tests**: Never skip glibc, gcc, or binutils test suites
+1. **Chroot Limitations**: Some tests fail only due to chroot environment restrictions
+1. **Acceptable Failures**: A small number of failures is often acceptable
+1. **System Requirements**: Some tests depend on kernel configuration or hardware features
+1. **Performance**: Test suites can take hours on some packages (especially GCC)
+
+### Running Tests
+
+```bash
+# Build all packages (includes ~60 inline tests)
+bazel build //packages/chapter_08:all_chapter_08
+
+# Run critical tests separately
+bazel test //packages/chapter_08:critical_tests
+
+# Run individual critical tests
+bazel test //packages/chapter_08:glibc_test
+bazel test //packages/chapter_08:gcc_test
+bazel test //packages/chapter_08:binutils_test
+
+# Quick smoke tests
+bazel test //packages/chapter_08:smoke_tests
+```
+
+### Viewing Test Results
+
+```bash
+# View complete test log
+cat bazel-bin/packages/chapter_08/glibc_test.log
+cat bazel-bin/packages/chapter_08/gcc_test.log
+cat bazel-bin/packages/chapter_08/binutils_test.log
+
+# Search for failures
+grep -i "fail" bazel-bin/packages/chapter_08/glibc_test.log
+grep -i "error" bazel-bin/packages/chapter_08/gcc_test.log
+
+# Count passes and failures
+grep -c "PASS" bazel-bin/packages/chapter_08/glibc_test.log
+grep -c "FAIL" bazel-bin/packages/chapter_08/glibc_test.log
+```
+
+### When to Worry About Test Failures
+
+Contact LFS support or consult forums if:
+
+- More than a few tests fail in critical packages (glibc, gcc, binutils)
+- Completely unexpected failures (not documented here or in LFS book)
+- Consistent failures across multiple packages
+- Glibc fails more than ~10 tests out of 5000+
+
+### References
+
+- LFS Book Chapter 8: https://www.linuxfromscratch.org/lfs/view/12.2/chapter08/
+- Test specifications from: `docs/lfs-book/chapter08/*.xml`
+
+______________________________________________________________________
+
 ## 🆘 Getting Help
 
 ### Before asking for help

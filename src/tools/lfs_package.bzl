@@ -13,7 +13,44 @@ Related modules:
 - lfs_macros.bzl: Higher-level convenience macros built on lfs_package
 """
 
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools:providers.bzl", "LfsToolchainInfo")
+
+def _is_chroot_phase(phase):
+    """Returns True if this phase should use the Podman worker."""
+    return phase == "chroot"
+
+def _run_chroot_build(ctx, build_script, marker, inputs):
+    """Execute build using Podman worker with JSON protocol."""
+    log_file = ctx.actions.declare_file(ctx.label.name + ".log")
+
+    # Create flagfile from template (required by Bazel worker strategy)
+    # Bazel reads this and sends contents as JSON work requests via stdin
+    flagfile = ctx.actions.declare_file(ctx.label.name + "_worker.params")
+    ctx.actions.expand_template(
+        template = ctx.file._worker_flagfile_template,
+        output = flagfile,
+        substitutions = {
+            "{script_path}": build_script.path,
+            "{done_path}": marker.path,
+            "{log_path}": log_file.path,
+        },
+    )
+
+    ctx.actions.run(
+        executable = ctx.executable._worker_launcher,
+        arguments = ["@" + flagfile.path],
+        inputs = depset(inputs + [build_script, flagfile]),
+        outputs = [marker, log_file],
+        mnemonic = "LfsChrootBuild",
+        progress_message = "Building LFS package (chroot): {}".format(ctx.label.name),
+        execution_requirements = {
+            "supports-workers": "1",
+            "requires-worker-protocol": "json",
+            "no-sandbox": "1",
+        },
+    )
+    return log_file
 
 def _lfs_package_impl(ctx):
     """
@@ -119,6 +156,7 @@ done
     if configure_cmd:
         configure_block = """# Configure
 echo "Configuring {name}"...
+cd "$WORKDIR"
 {cmd}
 """.format(name = ctx.label.name, cmd = configure_cmd)
 
@@ -126,6 +164,7 @@ echo "Configuring {name}"...
     if build_cmd:
         build_block = """# Build
 echo "Building {name}"...
+cd "$WORKDIR"
 {cmd}
 """.format(name = ctx.label.name, cmd = build_cmd)
 
@@ -133,8 +172,15 @@ echo "Building {name}"...
     if install_cmd:
         install_block = """# Install
 echo "Installing {name} to $LFS"...
+cd "$WORKDIR"
 {cmd}
 """.format(name = ctx.label.name, cmd = install_cmd)
+
+    # Determine if we should skip ownership check
+    # For chroot phase builds, always skip ownership check (runs as root inside container)
+    # Otherwise use the explicit attribute value
+    phase = ctx.attr.phase
+    skip_check = _is_chroot_phase(phase) or ctx.attr.skip_ownership_check
 
     build_script = ctx.actions.declare_file(ctx.label.name + "_build.sh")
     ctx.actions.expand_template(
@@ -144,7 +190,7 @@ echo "Installing {name} to $LFS"...
             "{label}": str(ctx.label),
             "{name}": ctx.label.name,
             "{sysroot_path}": sysroot_path,
-            "{skip_ownership_check}": "1" if ctx.attr.skip_ownership_check else "0",
+            "{skip_ownership_check}": "1" if skip_check else "0",
             "{toolchain_exports}": (toolchain_env + "\n") if toolchain_env else "",
             "{extra_env}": (extra_env + "\n") if extra_env else "",
             "{src_handling}": src_handling,
@@ -157,16 +203,21 @@ echo "Installing {name} to $LFS"...
         is_executable = True,
     )
 
-    ctx.actions.run_shell(
-        inputs = inputs + cmd_inputs + [build_script],
-        outputs = [marker],
-        command = build_script.path,
-        mnemonic = "LfsPackage",
-        progress_message = "Building LFS package: {}".format(ctx.label.name),
-        execution_requirements = {
-            "no-sandbox": "1",
-        },
-    )
+    # Execute build - use Podman worker for chroot phase, direct shell otherwise
+    phase = ctx.attr.phase
+    if _is_chroot_phase(phase):
+        _run_chroot_build(ctx, build_script, marker, inputs + cmd_inputs)
+    else:
+        ctx.actions.run_shell(
+            inputs = inputs + cmd_inputs + [build_script],
+            outputs = [marker],
+            command = build_script.path,
+            mnemonic = "LfsPackage",
+            progress_message = "Building LFS package: {}".format(ctx.label.name),
+            execution_requirements = {
+                "no-sandbox": "1",
+            },
+        )
 
     if runner_name:
         ctx.actions.expand_template(
@@ -191,35 +242,12 @@ echo "Installing {name} to $LFS"...
         executable = marker,
     )]
 
-lfs_package = rule(
+_lfs_package_rule = rule(
     implementation = _lfs_package_impl,
     doc = """
-    Build an LFS package using the standard extract/configure/make/install pattern.
+    Internal rule for building LFS packages.
 
-    Supports multiple source archives/files, optional patches, and log capture.
-    Commands can be provided as inline strings or as separate script files.
-
-    Example:
-        ```python
-        lfs_package(
-            name = "hello",
-            srcs = ["hello.c"],
-            build_cmd = "gcc hello.c -o hello",
-            install_cmd = "install -D hello $LFS/tools/bin/hello",
-        )
-        ```
-
-    For packages that produce executables:
-        ```python
-        lfs_package(
-            name = "hello",
-            srcs = ["hello.c"],
-            build_cmd = "gcc hello.c -o hello",
-            install_cmd = "install -D hello $LFS/tools/bin/hello",
-            binary_name = "hello",
-            create_runner = True,  # Allows 'bazel run :hello'
-        )
-        ```
+    Use the lfs_package macro instead of calling this rule directly.
     """,
     attrs = {
         "srcs": attr.label_list(
@@ -285,8 +313,8 @@ lfs_package = rule(
             default = False,
         ),
         "phase": attr.string(
-            doc = "Optional metadata describing the package phase (for documentation only)",
-            default = "",
+            doc = "Build phase (REQUIRED): ch5 (cross), ch6 (temp), or chroot (Podman worker)",
+            mandatory = True,
         ),
         "skip_ownership_check": attr.bool(
             doc = "Skip sysroot ownership check (for chroot builds running as root)",
@@ -300,6 +328,93 @@ lfs_package = rule(
             default = "//tools/scripts:lfs_package_build_template",
             allow_single_file = True,
         ),
+        "_worker_launcher": attr.label(
+            default = "//tools/podman:worker_launcher",
+            executable = True,
+            cfg = "exec",
+        ),
+        "_worker_flagfile_template": attr.label(
+            default = "//tools/podman:worker_flagfile_template",
+            allow_single_file = True,
+        ),
     },
     executable = True,
 )
+
+def lfs_package(
+        name,
+        test_cmd = None,
+        tags = [],
+        **kwargs):
+    """
+    Build an LFS package using the standard extract/configure/make/install pattern.
+
+    When test_cmd is provided, automatically creates a test target named {name}_test.
+
+    Args:
+        name: Target name
+        test_cmd: Optional test command (e.g., 'make check'). Creates a test target if provided.
+        tags: Tags to apply to the build target
+        **kwargs: All other arguments passed to the underlying _lfs_package_rule
+
+    Example:
+        ```python
+        lfs_package(
+            name = "zlib",
+            srcs = ["@zlib_src//file"],
+            phase = "chroot",
+            configure_cmd = "./configure --prefix=/usr",
+            build_cmd = "make -j$(nproc)",
+            install_cmd = "make install",
+            test_cmd = "make check",  # Creates zlib_test target
+        )
+        ```
+
+    This creates two targets:
+    - :zlib - builds and installs the package
+    - :zlib_test - runs the test suite
+    """
+
+    # Create the main build target
+    _lfs_package_rule(
+        name = name,
+        tags = tags,
+        **kwargs
+    )
+
+    # If test_cmd is provided, create a test target
+    if test_cmd:
+        test_name = name + "_test"
+        test_package_name = name + "_test_package"
+
+        # Create internal test package that rebuilds and tests
+        # Tests need the package to be built first, so we run: configure + build + test
+        test_build_cmd = kwargs.get("build_cmd", "make -j$(nproc)")
+        if test_build_cmd:
+            # Run build first, then test
+            combined_test_cmd = test_build_cmd + " && " + test_cmd
+        else:
+            combined_test_cmd = test_cmd
+
+        _lfs_package_rule(
+            name = test_package_name,
+            srcs = kwargs.get("srcs", []),
+            patches = kwargs.get("patches", []),
+            phase = kwargs.get("phase", "chroot"),
+            toolchain = kwargs.get("toolchain", None),
+            env = kwargs.get("env", {}),
+            configure_cmd = kwargs.get("configure_cmd", "true"),  # Use same configure as main build
+            build_cmd = combined_test_cmd,  # Build + test
+            install_cmd = "true",  # Skip install for tests
+            deps = kwargs.get("deps", []),  # Same deps as main build (don't depend on main build to avoid circular deps)
+            tags = ["manual"],  # Don't build unless explicitly requested
+        )
+
+        # Create sh_test wrapper that depends on the test package
+        sh_test(
+            name = test_name,
+            srcs = ["//tools/scripts:test_wrapper.sh"],
+            data = [":" + test_package_name],
+            tags = tags + ["test"],
+            size = "large",  # Tests can take a while
+        )

@@ -6,24 +6,21 @@
 package(default_visibility = ["//visibility:public"])
 
 # Export all template scripts
-exports_files(glob(["*.sh"]))
+exports_files(glob([
+    "*.sh",
+    "*.tpl",
+]))
 
 # Template for lfs_package build scripts
 filegroup(
     name = "lfs_package_build_template",
-    srcs = ["lfs_package_build_template.sh"],
+    srcs = ["lfs_package_build.sh.tpl"],
 )
 
 # Template for binary runner scripts
 filegroup(
     name = "lfs_runner_script_template",
     srcs = ["lfs_runner_script.sh"],
-)
-
-# Template for chroot command wrapper scripts
-filegroup(
-    name = "lfs_chroot_command_wrapper_template",
-    srcs = ["lfs_chroot_command_wrapper.sh"],
 )
 
 # Template for sysroot file staging wrapper scripts

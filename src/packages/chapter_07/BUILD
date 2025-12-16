@@ -1,101 +1,175 @@
-load("//tools:lfs_build.bzl", "lfs_chroot_command", "lfs_chroot_extract_tarball", "lfs_chroot_step", "lfs_sysroot_stage_files", "lfs_toolchain")
+"""
+Chapter 7: Entering the Chroot Environment (Rootless Podman Worker)
+
+Builds essential packages inside the chroot environment using the rootless
+Podman worker system. All builds run without sudo.
+
+This chapter builds 6 packages:
+- gettext (i18n tools)
+- bison (parser generator)
+- perl (scripting language)
+- python (programming language)
+- texinfo (documentation system)
+- util-linux (system utilities)
+"""
+
+load("//tools:lfs_build.bzl", "lfs_package", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
-lfs_chroot_command(
-    name = "test_chroot_echo",
-    chroot_helper = "//tools:lfs_chroot_helper_script",
-    cmd_file = "//tools/scripts:test_chroot_echo_script",
-    lfs_sysroot = "//:lfs_sysroot_files",
-    tags = [
-        "manual",
-        "requires-sudo",
-    ],
-    toolchain = "//packages/chapter_06:temp_tools_toolchain",
-    visibility = ["//visibility:public"],
-)
-
-lfs_chroot_step(
-    name = "chroot_mount_test",
-    cmd_file = "//packages/chapter_07:chroot_mount_test.sh",
-    tags = [
-        "manual",
-        "requires-sudo",
-    ],
-    deps = ["//packages/chapter_06:all_temp_tools"],  # Ensure a basic environment is present
-)
-
-# Note: chroot_smoke_test moved to //tools/scripts/tests:chroot_smoke_test
-
 # --------------------------------------------------------------------------- #
-# Chapter 7 prep steps (filesystem layout, ownership, cleanup)
+# Chapter 7 preparation steps (Podman worker - no sudo required)
 # --------------------------------------------------------------------------- #
 
-lfs_sysroot_stage_files(
-    name = "stage_ch7_sources",
-    srcs = [
-        "@bison_src//file",
-        "@gettext_src//file",
-        "@perl_src//file",
-        "@python_src//file",
-        "@texinfo_src//file",
-        "@util_linux_src//file",
-    ],
-    dest_rel = "sources",
-    lfs_sysroot = "//:lfs_sysroot_files",
-    tags = [
-        "requires-sudo",
-    ],
-)
-
-lfs_chroot_step(
+# Create directory structure inside chroot
+lfs_package(
     name = "chroot_create_dirs",
-    cmd_file = "//tools/scripts:chroot_create_dirs_script",
+    build_cmd = "true",
+    configure_cmd = "true",
+    install_cmd = """
+        # Matches docs/lfs-book/chapter07/creatingdirs.xml (System V)
+
+        # Create essential symlinks (/bin -> /usr/bin, etc.)
+        # These must exist before running configure scripts
+        ln -sfv /usr/bin /bin
+        ln -sfv /usr/sbin /sbin
+        ln -sfv /usr/lib /lib
+        case $(uname -m) in
+          x86_64) ln -sfv /usr/lib /lib64 ;;
+        esac
+
+        mkdir -pv /{boot,home,mnt,opt,srv}
+        mkdir -pv /etc/{opt,sysconfig}
+        mkdir -pv /lib/firmware
+        mkdir -pv /media/{floppy,cdrom}
+        mkdir -pv /usr/{,local/}{include,src}
+        mkdir -pv /usr/lib/locale
+        mkdir -pv /usr/local/{bin,lib,sbin}
+        mkdir -pv /usr/{,local/}share/{color,dict,doc,info,locale,man}
+        mkdir -pv /usr/{,local/}share/{misc,terminfo,zoneinfo}
+        mkdir -pv /usr/{,local/}share/man/man{1..8}
+        mkdir -pv /var/{cache,local,log,mail,opt,spool}
+        mkdir -pv /var/lib/{color,misc,locate}
+        mkdir -pv /sources
+        ln -sfv /run /var/run
+        ln -sfv /run/lock /var/lock
+        install -dv -m 0750 /root
+        install -dv -m 1777 /tmp /var/tmp
+    """,
+    phase = "chroot",
     deps = ["//packages/chapter_06:all_temp_tools"],
 )
 
-lfs_chroot_step(
+# Seed essential files (/etc/passwd, /etc/group, etc.)
+lfs_package(
     name = "chroot_seed_files",
-    cmd_file = "//tools/scripts:chroot_seed_files_script",
+    build_cmd = "true",
+    configure_cmd = "true",
+    install_cmd = """
+        # Matches docs/lfs-book/chapter07/createfiles.xml (System V)
+
+        # Create shell symlinks (needed by configure scripts and build tools)
+        ln -sfv /usr/bin/bash /bin/sh
+        ln -sfv /usr/bin/bash /bin/bash
+
+        # Create /etc/mtab symlink
+        if [ -L /etc/mtab ]; then
+          if [ "$(readlink /etc/mtab)" != "/proc/self/mounts" ]; then
+            ln -snfv /proc/self/mounts /etc/mtab
+          fi
+        elif [ -e /etc/mtab ]; then
+          ln -snfv /proc/self/mounts /etc/mtab
+        else
+          ln -sv /proc/self/mounts /etc/mtab
+        fi
+
+        # Create /etc/hosts
+        cat > /etc/hosts <<EOF
+127.0.0.1  localhost $(hostname)
+::1        localhost
+EOF
+
+        # Create /etc/passwd
+        cat > /etc/passwd <<'EOF'
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/dev/null:/usr/bin/false
+daemon:x:6:6:Daemon User:/dev/null:/usr/bin/false
+messagebus:x:18:18:D-Bus Message Daemon User:/run/dbus:/usr/bin/false
+uuidd:x:80:80:UUID Generation Daemon User:/dev/null:/usr/bin/false
+nobody:x:65534:65534:Unprivileged User:/dev/null:/usr/bin/false
+EOF
+
+        # Create /etc/group
+        cat > /etc/group <<'EOF'
+root:x:0:
+bin:x:1:daemon
+sys:x:2:
+kmem:x:3:
+tape:x:4:
+tty:x:5:
+daemon:x:6:
+floppy:x:7:
+disk:x:8:
+lp:x:9:
+dialout:x:10:
+audio:x:11:
+video:x:12:
+utmp:x:13:
+cdrom:x:15:
+adm:x:16:
+messagebus:x:18:
+input:x:24:
+mail:x:34:
+kvm:x:61:
+uuidd:x:80:
+wheel:x:97:
+users:x:999:
+nogroup:x:65534:
+EOF
+
+        # Create locale
+        localedef -i C -f UTF-8 C.UTF-8
+
+        # Add tester user
+        echo "tester:x:101:101::/home/tester:/bin/bash" >> /etc/passwd
+        echo "tester:x:101:" >> /etc/group
+        install -o tester -d /home/tester
+
+        # Create log files
+        touch /var/log/{btmp,lastlog,faillog,wtmp}
+        chgrp -v utmp /var/log/lastlog
+        chmod -v 664 /var/log/lastlog
+        chmod -v 600 /var/log/btmp
+    """,
+    phase = "chroot",
     deps = [
         ":chroot_create_dirs",
         "//packages/chapter_06:all_temp_tools",
     ],
 )
 
-lfs_chroot_step(
-    name = "chroot_chown_root",
-    cmd = """
-set -euo pipefail
-chown -R root:root /{usr,lib,var,etc,bin,sbin,tools}
-case $(uname -m) in
-  x86_64) if [ -d /lib64 ]; then chown -R root:root /lib64; fi ;;
-esac
-""",
+# Cleanup temporary files before building packages
+lfs_package(
+    name = "chroot_cleanup_tmp",
+    build_cmd = "true",
+    configure_cmd = "true",
+    install_cmd = """
+        rm -rf /tmp/* /var/tmp/*
+    """,
+    phase = "chroot",
     deps = [
         ":chroot_seed_files",
         "//packages/chapter_06:all_temp_tools",
     ],
 )
 
-lfs_chroot_step(
-    name = "chroot_cleanup_tmp",
-    cmd = """
-set -euo pipefail
-rm -rf /tmp/* /var/tmp/* || true
-""",
-    deps = [
-        ":chroot_chown_root",
-        "//packages/chapter_06:all_temp_tools",
-    ],
-)
-
-lfs_chroot_step(
+# Aggregate preparation target
+filegroup(
     name = "chroot_prepare",
-    cmd = "true",
-    deps = [
+    srcs = [
         ":chroot_cleanup_tmp",
-        ":stage_ch7_sources",
+        ":chroot_create_dirs",
+        ":chroot_seed_files",
     ],
 )
 
@@ -105,186 +179,140 @@ lfs_toolchain(
     name = "chroot_base_toolchain",
     bin_path = "/usr/bin:/usr/sbin:/bin:/sbin",
     env = {
-        "CC": "x86_64-lfs-linux-gnu-gcc",
-        "CXX": "x86_64-lfs-linux-gnu-g++",
-        "LFS_TGT": "x86_64-lfs-linux-gnu",
+        # Environment is set by Podman worker
+        # This is mainly for documentation/dependency tracking
     },
     visibility = ["//visibility:public"],
     deps = [
-        "//packages/chapter_06:temp_tools_toolchain",
+        ":chroot_toolchain_phase",
     ],
 )
 
 # --------------------------------------------------------------------------- #
-# Chapter 7 packages (built inside chroot using temporary tools toolchain)
-# --------------------------------------------------------------------------- #
-
-# --------------------------------------------------------------------------- #
-# Chapter 7 packages (built inside chroot using temporary tools toolchain)
+# Chapter 7 packages (built inside Podman worker - no sudo required)
 #
 # PARALLELISM: These packages have minimal inter-dependencies and can build
-# mostly in parallel. We use Bazel's resource semaphore to limit concurrent
-# chroot operations to prevent resource contention.
+# in parallel. The Podman worker handles concurrent builds safely.
 #
 # Dependency strategy:
-# - All extractions depend on chroot_prepare (one-time setup)
 # - Gettext builds first (provides i18n tools that may be used by others)
 # - All other packages can build in parallel after gettext
-# - Resource constraint limits concurrent chroot builds to 2
 # --------------------------------------------------------------------------- #
 
-# Extract all tarballs in parallel after chroot is prepared
-lfs_chroot_extract_tarball(
-    name = "extract_gettext",
-    tarball_name = "gettext-0.22.5.tar.xz",
-    deps = [":chroot_prepare"],
-)
-
-lfs_chroot_extract_tarball(
-    name = "extract_bison",
-    tarball_name = "bison-3.8.2.tar.xz",
-    deps = [":chroot_prepare"],
-)
-
-lfs_chroot_extract_tarball(
-    name = "extract_perl",
-    tarball_name = "perl-5.40.0.tar.xz",
-    deps = [":chroot_prepare"],
-)
-
-lfs_chroot_extract_tarball(
-    name = "extract_python",
-    tarball_name = "Python-3.12.4.tar.xz",
-    deps = [":chroot_prepare"],
-)
-
-lfs_chroot_extract_tarball(
-    name = "extract_texinfo",
-    tarball_name = "texinfo-7.1.tar.xz",
-    deps = [":chroot_prepare"],
-)
-
-lfs_chroot_extract_tarball(
-    name = "extract_util_linux",
-    tarball_name = "util-linux-2.40.2.tar.xz",
-    deps = [":chroot_prepare"],
-)
-
-# Build gettext first (provides i18n tools)
-lfs_chroot_step(
+# Gettext - i18n tools (built first, provides msgfmt for others)
+lfs_package(
     name = "gettext",
-    cmd = """
-set -euo pipefail
-cd /sources/gettext-0.22.5
-./configure --disable-shared
-make -j$(nproc)
-cp -v gettext-tools/src/{msgfmt,msgmerge,xgettext} /usr/bin
-""",
-    deps = [":extract_gettext"],
+    srcs = ["@gettext_src//file"],
+    build_cmd = "make -j$(nproc)",
+    configure_cmd = "./configure --disable-shared",
+    install_cmd = """
+        cp -v gettext-tools/src/{msgfmt,msgmerge,xgettext} /usr/bin
+    """,
+    phase = "chroot",
+    deps = [":chroot_prepare"],
 )
 
-# All other packages can build in parallel after gettext
-lfs_chroot_step(
+# Bison - parser generator
+lfs_package(
     name = "bison",
-    cmd = """
-set -euo pipefail
-cd /sources/bison-3.8.2
-./configure --prefix=/usr --docdir=/usr/share/doc/bison-3.8.2
-make -j$(nproc)
-make install
-""",
+    srcs = ["@bison_src//file"],
+    build_cmd = "make -j$(nproc)",
+    configure_cmd = "./configure --prefix=/usr --docdir=/usr/share/doc/bison-3.8.2",
+    install_cmd = "make install",
+    phase = "chroot",
     deps = [
-        ":extract_bison",
+        ":chroot_prepare",
         ":gettext",  # Wait for gettext i18n tools
     ],
 )
 
-lfs_chroot_step(
+# Perl - scripting language with shared library support
+lfs_package(
     name = "perl",
-    cmd = """
-set -euo pipefail
-cd /sources/perl-5.40.0
-sh Configure -des -D prefix=/usr -D vendorprefix=/usr -D useshrplib \\
-  -Dprivlib=/usr/lib/perl5/5.40/core_perl \\
-  -Darchlib=/usr/lib/perl5/5.40/core_perl \\
-  -Dsitelib=/usr/lib/perl5/5.40/site_perl \\
-  -Dsitearch=/usr/lib/perl5/5.40/site_perl \\
-  -Dvendorlib=/usr/lib/perl5/5.40/vendor_perl \\
-  -Dvendorarch=/usr/lib/perl5/5.40/vendor_perl
-make -j$(nproc)
-make install
-""",
+    srcs = ["@perl_src//file"],
+    build_cmd = "make -j$(nproc)",
+    configure_cmd = """
+        sh Configure -des -D prefix=/usr -D vendorprefix=/usr -D useshrplib \\
+          -Dprivlib=/usr/lib/perl5/5.40/core_perl \\
+          -Darchlib=/usr/lib/perl5/5.40/core_perl \\
+          -Dsitelib=/usr/lib/perl5/5.40/site_perl \\
+          -Dsitearch=/usr/lib/perl5/5.40/site_perl \\
+          -Dvendorlib=/usr/lib/perl5/5.40/vendor_perl \\
+          -Dvendorarch=/usr/lib/perl5/5.40/vendor_perl
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
     deps = [
-        ":extract_perl",
+        ":chroot_prepare",
         ":gettext",  # Wait for gettext i18n tools
     ],
 )
 
-lfs_chroot_step(
+# Python - programming language with shared support
+lfs_package(
     name = "python",
-    cmd = """
-set -euo pipefail
-cd /sources/Python-3.12.4
-./configure --prefix=/usr --enable-shared --without-ensurepip
-make -j$(nproc)
-make install
-""",
+    srcs = ["@python_src//file"],
+    build_cmd = "make -j$(nproc)",
+    configure_cmd = "./configure --prefix=/usr --enable-shared --without-ensurepip",
+    install_cmd = "make install",
+    phase = "chroot",
     deps = [
-        ":extract_python",
+        ":chroot_prepare",
         ":gettext",  # Wait for gettext i18n tools
     ],
 )
 
-lfs_chroot_step(
+# Texinfo - documentation system
+lfs_package(
     name = "texinfo",
-    cmd = """
-set -euo pipefail
-cd /sources/texinfo-7.1
-./configure --prefix=/usr
-make -j$(nproc)
-make install
-""",
+    srcs = ["@texinfo_src//file"],
+    build_cmd = "make -j$(nproc)",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
+    phase = "chroot",
     deps = [
-        ":extract_texinfo",
+        ":chroot_prepare",
         ":gettext",  # Wait for gettext i18n tools
     ],
 )
 
-lfs_chroot_step(
+# Util-linux - system utilities (mount, lsblk, fdisk, etc.)
+lfs_package(
     name = "util_linux",
-    cmd = """
-set -euo pipefail
-cd /sources/util-linux-2.40.2
-mkdir -pv /var/lib/hwclock
-./configure --libdir=/usr/lib \\
-  --runstatedir=/run \\
-  --disable-chfn-chsh \\
-  --disable-login \\
-  --disable-nologin \\
-  --disable-su \\
-  --disable-setpriv \\
-  --disable-runuser \\
-  --disable-pylibmount \\
-  --disable-static \\
-  --disable-liblastlog2 \\
-  --without-python \\
-  ADJTIME_PATH=/var/lib/hwclock/adjtime \\
-  --docdir=/usr/share/doc/util-linux-2.40.2
-make -j$(nproc)
-make install
-""",
+    srcs = ["@util_linux_src//file"],
+    build_cmd = "make -j$(nproc)",
+    configure_cmd = """
+        mkdir -pv /var/lib/hwclock
+        ./configure --libdir=/usr/lib \\
+          --runstatedir=/run \\
+          --disable-chfn-chsh \\
+          --disable-login \\
+          --disable-nologin \\
+          --disable-su \\
+          --disable-setpriv \\
+          --disable-runuser \\
+          --disable-pylibmount \\
+          --disable-static \\
+          --disable-liblastlog2 \\
+          --without-python \\
+          ADJTIME_PATH=/var/lib/hwclock/adjtime \\
+          --docdir=/usr/share/doc/util-linux-2.40.2
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
     deps = [
-        ":extract_util_linux",
+        ":chroot_prepare",
         ":gettext",  # Wait for gettext i18n tools
+        ":perl",  # Needed for ./tools/all_syscalls script during build
     ],
 )
 
-# Convenience aggregate to run all Chapter 7 builds in order (manual/sudo).
-lfs_chroot_step(
+# Convenience aggregate to build all Chapter 7 packages
+filegroup(
     name = "chroot_toolchain_phase",
-    cmd = "true",
-    deps = [
+    srcs = [
         ":bison",
+        ":gettext",
         ":perl",
         ":python",
         ":texinfo",
@@ -292,45 +320,46 @@ lfs_chroot_step(
     ],
 )
 
-# Chapter 7.14 cleanup (optional but recommended).
-lfs_chroot_step(
+# Chapter 7.14 cleanup (optional but recommended)
+lfs_package(
     name = "chroot_cleanup",
-    cmd = """
-set -euo pipefail
-rm -rf /usr/share/{info,man,doc}/*
-find /usr/{lib,libexec} -name '*.la' -delete
-rm -rf /tools
-rm -rf /tmp/* /var/tmp/* || true
-""",
+    build_cmd = "true",
+    configure_cmd = "true",
+    install_cmd = """
+        # Remove libtool archive files
+        find /usr/{lib,libexec} -name '*.la' -delete
+        # Remove Chapter 6 tools directory if it exists
+        rm -rf /tools
+        # Clean temporary files
+        rm -rf /tmp/* /var/tmp/*
+        # Note: Skipping /usr/share/{info,man,doc} cleanup due to
+        # permission issues with some man pages even when running as root
+    """,
+    phase = "chroot",
     deps = [":chroot_toolchain_phase"],
 )
 
-# Final convenience target for "Chapter 7 is done".
-lfs_chroot_step(
+# Final convenience target for "Chapter 7 is done"
+filegroup(
     name = "chroot_finalize",
-    cmd = "true",
-    deps = [
+    srcs = [
         ":chroot_cleanup",
     ],
 )
 
-# Quick validation of core Chapter 7 toolchain inside chroot.
-lfs_chroot_step(
+# Quick validation of core Chapter 7 toolchain inside chroot
+lfs_package(
     name = "chroot_smoke_versions",
-    cmd = """
-set -euo pipefail
-bison --version | head -1
-msgfmt --version | head -1
-perl -V:version
-python3 -V
-info --version | head -1
-lsblk --version | head -1
-""",
-    tags = [
-        "manual",
-        "requires-sudo",
-    ],
-    deps = [
-        ":chroot_toolchain_phase",
-    ],
+    build_cmd = """
+        bison --version | head -1
+        msgfmt --version | head -1
+        perl -V:version
+        python3 -V
+        info --version | head -1
+        lsblk --version | head -1
+    """,
+    configure_cmd = "true",
+    install_cmd = "true",
+    phase = "chroot",
+    deps = [":chroot_toolchain_phase"],
 )

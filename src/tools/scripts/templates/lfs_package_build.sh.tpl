@@ -7,13 +7,22 @@ set -euo pipefail
 # LFS Package Build Script
 # Package: {label}
 
-EXECROOT="$(pwd)"
+# For chroot builds, execroot is bind-mounted at /execroot inside the container
+# For host builds, execroot is the current working directory
+if [[ "{skip_ownership_check}" == "1" ]]; then
+    EXECROOT="/execroot"
+else
+    EXECROOT="$(pwd)"
+fi
 
 # Keep logs inside bazel-out (standard Bazel output tree)
-LOG_DIR="$EXECROOT/bazel-out/lfs-logs"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/{name}.log"
-exec > >(tee "$LOG_FILE") 2>&1
+# Skip for chroot builds - worker already captures logs
+if [[ "{skip_ownership_check}" != "1" ]]; then
+    LOG_DIR="$EXECROOT/bazel-out/lfs-logs"
+    mkdir -p "$LOG_DIR"
+    LOG_FILE="$LOG_DIR/{name}.log"
+    exec > >(tee "$LOG_FILE") 2>&1
+fi
 
 # LFS Environment
 # Use BUILD_WORKSPACE_DIRECTORY if available (bazel run)
@@ -23,10 +32,19 @@ if [[ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]]; then
 else
     WORKSPACE_ROOT="$EXECROOT"
 fi
-export LFS="$WORKSPACE_ROOT/{sysroot_path}"
+
+# For chroot builds, LFS is set by the worker to / (inside chroot)
+# For host builds, set LFS to the sysroot path
+if [[ "{skip_ownership_check}" != "1" ]]; then
+    export LFS="$WORKSPACE_ROOT/{sysroot_path}"
+    export PATH="$LFS/tools/bin:$PATH"
+else
+    # Chroot build: LFS already set by worker, use PATH from chroot environment
+    export LFS="${LFS:-/}"
+fi
+
 export LC_ALL=POSIX
 export LFS_TGT=x86_64-lfs-linux-gnu
-export PATH="$LFS/tools/bin:$PATH"
 # shellcheck disable=SC1083,SC1054
 {toolchain_exports}
 # shellcheck disable=SC1083,SC1054
@@ -124,6 +142,7 @@ check_sysroot_ownership
 
 # Working directory
 WORK_DIR="$(mktemp -d)"
+chmod 755 "$WORK_DIR"  # Allow test users (e.g., tester) to traverse this directory
 trap "rm -rf $WORK_DIR" EXIT
 cd "$WORK_DIR"
 
@@ -132,6 +151,11 @@ cd "$WORK_DIR"
 
 # shellcheck disable=SC1083,SC1054
 {patch_handling}
+
+# Save working directory for build phases
+# Packages may cd into subdirectories (e.g., 'cd unix', 'cd build')
+# This ensures each phase starts from the correct location
+WORKDIR="$(pwd)"
 
 # shellcheck disable=SC1083,SC1054
 {configure_block}

@@ -15,7 +15,7 @@ This directory implements the "bridge" between Bazel's dependency management and
   - [lfs_c_binary](#lfs_c_binary-macro)
   - [lfs_configure_make](#lfs_configure_make-macro)
   - [lfs_autotools / lfs_plain_make](#lfs_autotools--lfs_plain_make-macros)
-- [Chroot Rules](#lfs_chroot_command-rule)
+- [Chroot Builds (Podman Worker)](#chroot-builds-podman-worker)
 - [Environment Variables](#environment-variables-reference)
 - [Examples](#file-layout-in-build-files)
 - [Debugging](#debugging)
@@ -24,19 +24,18 @@ ______________________________________________________________________
 
 ## 📁 Files Overview
 
-| File / Dir           | Purpose                                                                |
-| -------------------- | ---------------------------------------------------------------------- |
-| `BUILD`              | Package marker and exported `.bzl` entrypoints                         |
-| `providers.bzl`      | `LfsToolchainInfo` provider                                            |
-| `lfs_build.bzl`      | Backward-compatible re-export module (loads and re-exports everything) |
-| `lfs_package.bzl`    | Core `lfs_package` rule                                                |
-| `lfs_toolchain.bzl`  | `lfs_toolchain` rule + default toolchain selection                     |
-| `lfs_macros.bzl`     | Convenience macros (`lfs_autotools`, `lfs_c_binary`, etc.)             |
-| `lfs_chroot.bzl`     | Chroot rules/macros (`lfs_chroot_command`, `lfs_chroot_step`, etc.)    |
-| `lfs_defaults.bzl`   | Phase presets for configure/make/install defaults                      |
-| `scripts/`           | Shell helpers and generated-script templates                           |
-| `scripts/templates/` | Template scripts expanded by Starlark rules                            |
-| `scripts/tests/`     | Test scripts used by chroot validation targets                         |
+| File / Dir           | Purpose                                                                          |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `BUILD`              | Package marker and exported `.bzl` entrypoints                                   |
+| `providers.bzl`      | `LfsToolchainInfo` provider                                                      |
+| `lfs_build.bzl`      | Backward-compatible re-export module (loads and re-exports everything)           |
+| `lfs_package.bzl`    | Core `lfs_package` rule (supports both host builds and Podman worker for chroot) |
+| `lfs_toolchain.bzl`  | `lfs_toolchain` rule + default toolchain selection                               |
+| `lfs_macros.bzl`     | Convenience macros (`lfs_autotools`, `lfs_c_binary`, etc.)                       |
+| `lfs_defaults.bzl`   | Phase presets for configure/make/install defaults                                |
+| `scripts/`           | Shell helpers and generated-script templates                                     |
+| `scripts/templates/` | Template scripts expanded by Starlark rules                                      |
+| `podman/`            | Rootless Podman worker for Chapter 7+ chroot builds (no sudo required)           |
 
 ______________________________________________________________________
 
@@ -135,6 +134,7 @@ The core rule that handles standard LFS package builds.
 | `build_cmd_file`     | label       | No       | `None`  | File containing build commands (exclusive with `build_cmd`)                                                                                         |
 | `install_cmd`        | string      | No       | `None`  | Install command (typically `make install`)                                                                                                          |
 | `install_cmd_file`   | label       | No       | `None`  | File containing install commands (exclusive with `install_cmd`)                                                                                     |
+| `phase`              | string      | No       | `None`  | Build phase: `"chroot"` triggers rootless Podman worker (Chapter 7+), otherwise builds on host                                                      |
 | `toolchain`          | label       | No       | `None`  | LfsToolchainInfo provider to inject                                                                                                                 |
 | `deps`               | label_list  | No       | `[]`    | Other `lfs_package` targets that must finish first                                                                                                  |
 | `env`                | string_dict | No       | `{}`    | Extra environment variables to export                                                                                                               |
@@ -201,7 +201,7 @@ lfs_package(
 )
 ```
 
-**With Custom Toolchain:**
+**With Custom Toolchain (Chapter 6):**
 
 ```python
 lfs_package(
@@ -211,6 +211,20 @@ lfs_package(
     build_cmd = "make -j$(nproc)",
     install_cmd = "make DESTDIR=$LFS install",
     toolchain = "//packages/chapter_05:cross_toolchain",
+)
+```
+
+**Chroot Build (Chapter 7+):**
+
+```python
+lfs_package(
+    name = "python",
+    phase = "chroot",  # Triggers rootless Podman worker
+    srcs = ["@python_src//file"],
+    configure_cmd = "./configure --prefix=/usr --enable-shared --without-ensurepip",
+    build_cmd = "make -j$(nproc)",
+    install_cmd = "make install",
+    deps = [":chroot_prepare"],
 )
 ```
 
@@ -365,36 +379,72 @@ lfs_autotools(
 
 ______________________________________________________________________
 
-### `lfs_chroot_command` (Rule)
+## 🐳 Chroot Builds (Podman Worker)
 
-Runs a command inside the LFS sysroot via the chroot helper. Handles mount/unmount
-of virtual filesystems and sets a sane environment inside chroot.
+**For Chapter 7+ builds**, use `lfs_package` with `phase="chroot"` to build inside a rootless Podman container.
 
-- Default env: starts with `env -i` and sets `HOME=/root`, `PATH=/usr/bin:/usr/sbin:/bin:/sbin`, `TERM=${TERM:-linux}`, plus `MAKEFLAGS`/`TESTSUITEFLAGS` as `-j$(nproc)`.
-- The generated inner script also exports `LC_ALL=C` and `LFS=/` (and any `env`/`toolchain` exports you provide).
-- Optional `env` attribute to add/override exports.
-- Optional `toolchain` (`LfsToolchainInfo`) to prepend `bin_path` and export its `env` (useful for temp_tools_toolchain).
-- Command source can be inline via `cmd` or provided as a file with `cmd_file` (recommended for long chroot scripts).
-- Requires sudo for the helper; keep targets tagged `manual`/`requires-sudo`.
+### How It Works
 
-Mount behavior:
+1. **Set `phase="chroot"`** in your `lfs_package` target
+1. Build triggers the rootless Podman worker (no sudo required!)
+1. Worker creates a container that:
+   - Mounts sysroot at `/lfs`
+   - Mounts virtual filesystems (`/dev`, `/proc`, `/sys`, `/run`)
+   - Runs as root inside container namespace (regular user on host)
+1. Package builds inside chroot using temporary tools from Chapter 6
 
-- The wrapper mounts VFS only if not already mounted.
-- It unmounts VFS on exit only if it mounted them.
-- To keep mounts across actions, use `--action_env=LFS_CHROOT_KEEP_MOUNTS=1`.
+### Example
 
-### `lfs_chroot_step` (Macro)
+```python
+lfs_package(
+    name = "perl",
+    phase = "chroot",  # This triggers Podman worker
+    srcs = ["@perl_src//file"],
+    configure_cmd = "./Configure -des -Dprefix=/usr ...",
+    build_cmd = "make -j$(nproc)",
+    install_cmd = "make install",
+    deps = [":chroot_prepare"],
+)
+```
 
-Thin wrapper around `lfs_chroot_command` that supplies defaults for `lfs_sysroot`,
-`chroot_helper`, and tags (`manual`, `requires-sudo`). Pass `toolchain` and `env`
-as needed; use for most Chapter 7+ steps to avoid repetition.
+### Benefits
 
-### `lfs_chroot_extract_tarball` (Macro)
+- ✅ **No sudo required** - Entire build runs as regular user
+- ✅ **Network isolation** - Builds run with `--network=none`
+- ✅ **Persistent worker** - Container stays alive across builds for performance
+- ✅ **Parallel builds** - Multiple packages can build simultaneously
 
-Extracts a tarball inside chroot (e.g., under `/sources`) and produces a marker
-for dependency ordering. Assumes the extraction dir is derived from the tarball
-basename (strips `.tar.*`). Use this to separate unpack from configure/build
-steps while keeping chroot operations declarative.
+### Requirements
+
+- Rootless Podman 3.0+ configured
+- Test with: `podman run --rm hello-world`
+
+______________________________________________________________________
+
+## 🗑️ Deprecated: Sudo-Based Chroot Rules
+
+**DEPRECATED:** The following rules are legacy and should not be used for new code. Use `lfs_package` with `phase="chroot"` instead.
+
+<details>
+<summary>Click to expand deprecated chroot rules (for reference only)</summary>
+
+### `lfs_chroot_command` (Rule) - DEPRECATED
+
+**Use `lfs_package` with `phase="chroot"` instead.**
+
+Legacy sudo-based rule for running commands inside chroot. Replaced by rootless Podman worker.
+
+### `lfs_chroot_step` (Macro) - DEPRECATED
+
+**Use `lfs_package` with `phase="chroot"` instead.**
+
+Legacy wrapper around `lfs_chroot_command`. Requires sudo.
+
+### `lfs_chroot_extract_tarball` (Macro) - DEPRECATED
+
+**Not needed with `lfs_package`** - tarballs are extracted automatically.
+
+</details>
 
 ______________________________________________________________________
 
@@ -497,26 +547,32 @@ ______________________________________________________________________
 
 ### Current Limitations
 
-1. **No Sandbox:** Builds run outside Bazel's sandbox to write to `sysroot/`
+1. **No Sandbox for Host Builds:** Chapter 5-6 builds run outside Bazel's sandbox to write to `sysroot/`
 
-   - **Impact:** Less isolated, can't leverage remote execution
-   - **Mitigation:** Each build uses isolated temp directory
+   - **Impact:** Less isolated, can't leverage remote execution for host builds
+   - **Mitigation:** Chapter 7+ uses isolated Podman containers; host builds use isolated temp directory
 
-1. **Binary Name Assumption:** Assumes binaries install to `$LFS/tools/bin/`
+1. **Binary Name Assumption:** Assumes binaries install to `$LFS/tools/bin/` or `$LFS/usr/bin/`
 
    - **Impact:** Libraries and headers should leave `create_runner` unset
 
 1. **Logs in Execroot:** Build logs are written to `bazel-out/lfs-logs/` inside the Bazel execroot, not the workspace.
 
    - **Impact:** Logs are transient unless copied out.
-   - **Mitigation:** Mirror or rsync execroot logs into a workspace directory if you want them versioned.
+   - **Mitigation:** View with `cat bazel-out/lfs-logs/<package>.log`
+
+### Recent Enhancements
+
+- [x] ✅ Rootless Podman worker for Chapter 7+ (no sudo required!)
+- [x] ✅ Persistent JSON worker protocol (container stays alive across builds)
+- [x] ✅ Network isolation (`--network=none` for chroot builds)
+- [x] ✅ Parallel chroot builds supported
 
 ### Future Enhancements
 
-- [x] `lfs_chroot_command` implemented for Chapter 7+ builds
 - [ ] Mirror build logs into workspace (currently in execroot `bazel-out/lfs-logs/`)
 - [ ] Better output capturing and logging
-- [ ] Support for `$LFS/usr/bin` binaries (not just `/tools/bin`)
+- [ ] Remote execution support for sandboxed builds
 
 ______________________________________________________________________
 

@@ -1,7 +1,7 @@
 # 🎭 Design Document: The "Managed Chaos" Architecture
 
 **Project:** `lfs-bazel-bootstrap`
-**Target:** Linux From Scratch (System V), Version 12.x
+**Target:** Linux From Scratch 12.2 (systemd)
 **Build System:** Bazel (Orchestrator) + Make/Shell (Executor)
 
 ## 1. 🧠 Core Philosophy: "Managed Chaos"
@@ -81,16 +81,17 @@ LfsToolchainInfo = provider(
 
 ### Component C: 🚪 The Chroot Bridge (`tools/lfs_build.bzl`)
 
-**Used for:** Chapter 6+ (Building the Final System).
-**Execution Context:** Inside `src/sysroot` (via `chroot`).
+**Used for:** Chapter 7+ (Building the Final System).
+**Execution Context:** Inside rootless Podman container running chroot.
 
-- **Inputs:** `srcs`, `cmd`, `toolchain`.
+- **Inputs:** `srcs`, `cmd`, `phase="chroot"`.
 - **Logic:**
-  1. Generates an `inner.sh` (the build commands).
-  1. Generates a `wrapper.sh` (invokes the chroot helper).
-  1. `wrapper.sh` calls `sudo lfs-chroot-helper.sh exec-chroot <sysroot> <inner.sh>`.
-  1. Helper manages mount/unmount of virtual filesystems.
-- **Requirement:** Must run with `tags = ["manual", "requires-sudo"]`.
+  1. Detects `phase="chroot"` and triggers Podman worker execution.
+  1. Worker launcher creates rootless container with Bazel JSON worker protocol.
+  1. Container mounts sysroot at `/lfs` and virtual filesystems (`/dev`, `/proc`, `/sys`, `/run`).
+  1. Executes configure, build, and install commands inside chroot.
+  1. Worker stays alive across builds for performance.
+- **Key Feature:** No sudo required! Uses Podman user namespaces.
 
 ______________________________________________________________________
 
@@ -126,38 +127,42 @@ ______________________________________________________________________
 ### Phase 5: 🚪 Entering Chroot (Chapter 7)
 
 - **Goal:** Build essential packages inside the chroot environment.
-- **Mechanism:** Use `lfs_chroot_command` and `lfs_chroot_step` rules.
+- **Mechanism:** Use `lfs_package` with `phase="chroot"` (Podman worker).
 - **Packages:** gettext, bison, perl, python, texinfo, util-linux
-- **Toolchain:** `//packages/chapter_06:temp_tools_toolchain` (runs inside chroot)
+- **Toolchain:** Temporary tools from Chapter 6 (available inside chroot)
+- **No Sudo:** Rootless Podman worker handles all chroot operations
 
 ### Phase 6: 🎉 The Final System (Chapter 8+)
 
 - **Goal:** Build the OS using the temporary toolchain inside the chroot.
-- **Mechanism:** Use `lfs_chroot` rules.
-- **Dependency:** All targets depend on `//packages/chapter_07:chroot_prepare`.
+- **Mechanism:** Use `lfs_package` with `phase="chroot"` (same Podman worker as Chapter 7).
+- **Dependency:** All targets depend on `//packages/chapter_07:chroot_base_toolchain`.
+- **No Sudo:** Entire build process runs as regular user with rootless Podman
 
 ______________________________________________________________________
 
-## 5. 🔐 Security Model (Chroot Helper)
+## 5. 🔐 Security Model (Rootless Podman)
 
-The `lfs-chroot-helper.sh` script is designed with security in mind:
+The rootless Podman worker provides secure isolation without sudo:
 
-- **Allowlist-based:** Only 4 operations allowed (mount-vfs, unmount-vfs, exec-chroot, check-mounts)
-- **Path validation:** All paths must be absolute and exist
-- **Idempotent mounts:** Safe to call multiple times
-- **No arbitrary execution:** Scripts are read from files, not passed as arguments
-- **Minimal sudo surface:** Only the helper needs sudo, not the entire Bazel process
+- **User namespaces:** Processes run as root inside container, regular user on host
+- **Network isolation:** Builds run with `--network=none` (offline enforcement)
+- **Filesystem isolation:** Only sysroot is mounted, rest of host filesystem is inaccessible
+- **No sudo required:** Entire build process runs as regular user
+- **Persistent worker:** JSON worker protocol amortizes container startup cost
 
-### 🔑 Sudoers Configuration
+### 🔑 Podman Setup
+
+No sudoers configuration needed! Just ensure rootless Podman is configured:
 
 ```bash
-# /etc/sudoers.d/lfs-bazel-chroot
-<user> ALL=(root) NOPASSWD: /path/to/repo/src/tools/lfs-chroot-helper.sh
+podman --version  # Should be 3.0+
+podman run --rm hello-world  # Test basic functionality
 ```
 
 ______________________________________________________________________
 
-## 6. 📊 Build Lifecycle
+## 6. 📊 Build Lifecycle (Chapter 7+)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -167,39 +172,42 @@ ______________________________________________________________________
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 2. Bazel resolves dependencies:                             │
-│    - stage_ch7_sources                                      │
-│    - extract_perl                                           │
-│    - temp_tools_toolchain (provides env)                    │
+│    - @perl_src//file (tarball from external repo)          │
+│    - chroot_prepare (env setup)                             │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. lfs_chroot_step generates:                               │
-│    - inner.sh (contains build commands + env)               │
-│    - wrapper.sh (calls chroot helper)                       │
+│ 3. lfs_package detects phase="chroot":                      │
+│    - Generates build script                                 │
+│    - Triggers Podman worker execution                       │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. wrapper.sh calls:                                        │
-│    sudo lfs-chroot-helper.sh exec-chroot $LFS /tmp/inner.sh │
+│ 4. Worker launcher creates rootless Podman container:       │
+│    - Mounts sysroot at /lfs                                 │
+│    - Mounts external repos for source access                │
+│    - Starts Bazel JSON worker protocol                      │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 5. Helper mounts virtual filesystems:                       │
+│ 5. Worker mounts virtual filesystems inside container:      │
 │    - /dev, /dev/pts, /proc, /sys, /run                      │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 6. Helper enters chroot and executes inner.sh               │
-│    - Extraction, configure, make, install                   │
+│ 6. Worker executes build inside chroot:                     │
+│    - Extracts tarball, configure, make, install             │
+│    - Runs as root inside container (regular user on host)   │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 7. Creates perl.done marker file                            │
+│    Worker stays alive for next build                        │
 │    Bazel caches the result                                  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -235,16 +243,25 @@ ______________________________________________________________________
 ### Current Limitations
 
 1. **No Remote Execution:** Builds run outside Bazel's sandbox, so they can't leverage remote execution or strict hermetic builds.
-1. **Sudo Requirement:** Chapter 7+ requires sudo for chroot operations.
-1. **No Parallel Chroot Builds:** The chroot helper uses locking, but parallel builds inside chroot are not tested.
+1. **Chapter 5-6 Host Builds:** Early toolchain builds run unsandboxed on host (Chapters 5-6). Chapter 7+ uses isolated Podman worker.
+1. **Podman Requirement:** Chapter 7+ requires rootless Podman configured on the host system.
+
+### Design Decisions
+
+- **Init System:** Using systemd (not SysVinit) - more modern and widely adopted
+- **Strip Command:** Skipped - optional per LFS book, preserves debug symbols
+- **Expected Test Failures:** Some tests fail in chroot environment - this is documented and expected per LFS book
 
 ### Future Enhancements
 
 - [ ] Add support for `rules_oci` to build container images from sysroot
 - [ ] Implement build artifact caching beyond Bazel's local cache
-- [ ] Add Chapter 8+ package definitions
+- [x] ~~Add Chapter 8+ package definitions~~ (COMPLETE - 79 packages)
 - [ ] Create automated tests for each chapter
 - [ ] Support for BLFS (Beyond Linux From Scratch) packages
+- [ ] Chapter 9: System configuration
+- [ ] Chapter 10: Make bootable (kernel, GRUB)
+- [ ] Chapter 11: Finalization and disk image
 
 ______________________________________________________________________
 

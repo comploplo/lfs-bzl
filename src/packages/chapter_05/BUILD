@@ -24,7 +24,7 @@ filegroup(
 )
 
 # Linux API headers
-# This step doesn’t follow the autotools install pattern; it installs by copying
+# This step doesn't follow the autotools install pattern; it installs by copying
 # headers into $LFS/usr after generating them.
 lfs_package(
     name = "linux_headers",
@@ -32,6 +32,7 @@ lfs_package(
     build_cmd = "make mrproper && make headers",
     configure_cmd = "true",
     install_cmd = "find usr/include -name '.*' -delete && cp -rv usr/include $LFS/usr",
+    phase = "ch5",
 )
 
 # Binutils Pass 1 (configure + make + install via helper)
@@ -96,6 +97,7 @@ lfs_package(
         # Provide libgcc_s for glibc build; stage1 gcc builds only libgcc.a.
         ln -sf libgcc.a $LFS/tools/lib/gcc/$LFS_TGT/14.2.0/libgcc_s.a
     """,
+    phase = "ch5",
     deps = [
         ":binutils_pass1",
         ":linux_headers",
@@ -130,6 +132,7 @@ lfs_package(
           ;;
         esac
     """,
+    phase = "ch5",
     deps = [
         ":gcc_pass1",
         ":linux_headers",
@@ -156,6 +159,7 @@ lfs_package(
             --with-gxx-include-dir=/tools/$LFS_TGT/include/c++/14.2.0 )
     """,
     install_cmd = "( cd build && DESTDIR=$LFS make install )",
+    phase = "ch5",
     deps = [
         ":glibc",
     ],

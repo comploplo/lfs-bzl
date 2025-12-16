@@ -71,6 +71,7 @@ lfs_package(
         ln -sfv libncursesw.so $LFS/usr/lib/libncurses.so
         sed -e 's/^#if.*XOPEN.*$/#if 1/' -i $LFS/usr/include/curses.h
     """,
+    phase = "ch6",
     toolchain = "//packages/chapter_05:cross_toolchain",
 )
 
@@ -111,6 +112,7 @@ lfs_configure_make(
         "--disable-static",
         "--docdir=/usr/share/doc/xz-5.6.2",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -124,6 +126,7 @@ lfs_configure_make(
         "--host=$LFS_TGT",
         "--build=$(./build-aux/config.guess)",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -150,6 +153,7 @@ lfs_package(
         mkdir -p $LFS/bin
         ln -sfv bash $LFS/bin/sh
     """,
+    phase = "ch6",
     toolchain = "//packages/chapter_05:cross_toolchain",
     deps = [":ncurses"],
 )
@@ -162,6 +166,7 @@ lfs_configure_make(
         "--host=$LFS_TGT",
         "--build=$(./build-aux/config.guess)",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -175,6 +180,7 @@ lfs_configure_make(
         "--host=$LFS_TGT",
         "--build=$(build-aux/config.guess)",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -188,6 +194,7 @@ lfs_configure_make(
         "--host=$LFS_TGT",
         "--build=$(build-aux/config.guess)",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -219,6 +226,7 @@ lfs_package(
         mv -v $LFS/usr/share/man/man1/chroot.1 $LFS/usr/share/man/man8/chroot.8
         sed -i 's/"1"/"8"/' $LFS/usr/share/man/man8/chroot.8
     """,
+    phase = "ch6",
     toolchain = "//packages/chapter_05:cross_toolchain",
 )
 
@@ -246,6 +254,7 @@ lfs_package(
         make DESTDIR=$LFS install
         rm -v $LFS/usr/lib/libmagic.la
     """,
+    phase = "ch6",
     toolchain = "//packages/chapter_05:cross_toolchain",
 )
 
@@ -258,6 +267,7 @@ lfs_configure_make(
         "--build=$(build-aux/config.guess)",
         "--localstatedir=/var/lib/locate",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -265,6 +275,7 @@ lfs_configure_make(
 
 # Gawk - Text processing
 # Requires sed pre-step to remove extras
+# NOTE: --without-mpfr avoids libtool .la file issues when MPFR is installed in sysroot
 lfs_package(
     name = "gawk",
     srcs = ["@gawk_src//file"],
@@ -273,9 +284,11 @@ lfs_package(
         sed -i 's/extras//' Makefile.in
         ./configure --prefix=/usr \\
             --host=$LFS_TGT \\
-            --build=$(build-aux/config.guess)
+            --build=$(build-aux/config.guess) \\
+            --without-mpfr
     """,
     install_cmd = "make DESTDIR=$LFS install",
+    phase = "ch6",
     toolchain = "//packages/chapter_05:cross_toolchain",
 )
 
@@ -288,6 +301,7 @@ lfs_configure_make(
         "--build=$(build-aux/config.guess)",
         "--without-guile",
     ],
+    phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
     destdir = "$LFS",
@@ -321,6 +335,7 @@ lfs_package(
         ( cd build && make DESTDIR=$LFS install )
         rm -v $LFS/usr/lib/lib{bfd,ctf,ctf-nobfd,opcodes,sframe}.{a,la}
     """,
+    phase = "ch6",
     toolchain = "//packages/chapter_05:cross_toolchain",
     deps = [
         ":bash",
@@ -397,6 +412,7 @@ lfs_package(
         ( cd build && make DESTDIR=$LFS install )
         ln -sfv gcc $LFS/usr/bin/cc
     """,
+    phase = "ch6",
     toolchain = "//packages/chapter_05:cross_toolchain",
     deps = [":binutils_pass2"],
 )

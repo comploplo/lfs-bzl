@@ -1,0 +1,22 @@
+# Pin by digest for reproducibility
+ARG DEBIAN_BASE="debian:bookworm-slim@sha256:e899040a73d36e2b36fa33216943539d9957cba8172b858097c2cabcdb20a3e2"
+FROM ${DEBIAN_BASE}
+
+# Minimal LFS build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash binutils bison coreutils diffutils findutils gawk gcc g++ \
+    grep gzip m4 make patch perl python3 sed tar texinfo xz-utils \
+    wget && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf bash /bin/sh
+RUN mkdir -p /lfs /work /cache
+
+# Set PATH explicitly for container environment
+# Bazel workers run with cleared environment, so tools need to be findable
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Copy worker.py into the container
+COPY scripts/worker.py /work/worker.py
+
+WORKDIR /work
+CMD ["python3", "/work/worker.py"]

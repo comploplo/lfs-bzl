@@ -1,7 +1,7 @@
 # 👋 Hello World Verification Tests
 # Tests the LFS build infrastructure and validates each toolchain stage
 
-load("//tools:lfs_build.bzl", "lfs_c_binary", "lfs_chroot_command", "lfs_package")
+load("//tools:lfs_build.bzl", "lfs_c_binary", "lfs_package")
 
 # 1️⃣ Basic host build (uses your system's GCC)
 lfs_package(
@@ -9,6 +9,7 @@ lfs_package(
     srcs = ["hello.c"],
     build_cmd = "gcc hello.c -o hello",
     install_cmd = "install -D hello $LFS/tools/bin/hello",
+    phase = "ch5",
     # binary_name defaults to "hello" (target name), making this runnable
 )
 
@@ -18,6 +19,7 @@ lfs_c_binary(
     name = "hello_cross",
     srcs = ["hello.c"],
     binary_name = "hello-cross",
+    phase = "ch5",
     toolchain = "//packages/chapter_05:cross_toolchain",
     deps = ["//packages/chapter_05:libstdcpp"],
 )
@@ -34,52 +36,50 @@ lfs_c_binary(
 #
 # Toolchain target: //packages/chapter_06:temp_tools_toolchain
 
-# 4️⃣ Chroot run using the Chapter 7 base toolchain
-# Copies hello.c into the sysroot then compiles and runs it inside the chroot.
+# --------------------------------------------------------------------------- #
+# 4️⃣ Chroot toolchain validation (Podman worker - no sudo required)
+# --------------------------------------------------------------------------- #
+
+# Validates the Chapter 7 base toolchain by compiling and running code inside
+# the chroot environment using the rootless Podman worker.
 #
-# NOTE: Chapter 7's chroot preparation includes a sysroot ownership change
-# (root:root). This target stages hello.c from within the chroot so it works
-# even after ownership changes.
-lfs_chroot_command(
+# Usage:
+#   bazel build //packages/hello_world:hello_chroot
+
+# Stage hello.c source into chroot
+lfs_package(
     name = "stage_hello_in_sysroot",
-    cmd = """
-set -euo pipefail
-mkdir -p /tmp/hello_world
-cat > /tmp/hello_world/hello.c <<'EOF'
+    build_cmd = "true",
+    configure_cmd = "true",
+    install_cmd = """
+        mkdir -p /tmp/hello_world
+        cat > /tmp/hello_world/hello.c <<'EOF'
 #include <stdio.h>
 
 int main(void)
 {
-    printf("Hello from LFS Bazel Bootstrap!\\n");
-    printf("Build system is working correctly.\\n");
+    printf("Hello from LFS Bazel Bootstrap (Podman worker)!\\n");
+    printf("Chroot toolchain is working correctly.\\n");
     return 0;
 }
 EOF
-""",
-    lfs_sysroot = "//:lfs_sysroot_files",
-    tags = [
-        "manual",
-        "requires-sudo",
-    ],
-    toolchain = "//packages/chapter_07:chroot_base_toolchain",
+    """,
+    phase = "chroot",
     visibility = ["//visibility:public"],
     deps = ["//packages/chapter_07:chroot_prepare"],
 )
 
-lfs_chroot_command(
+# Compile and run hello.c inside chroot
+lfs_package(
     name = "hello_chroot",
-    cmd = """
-set -euo pipefail
-cd /tmp/hello_world
-$CC hello.c -o hello_chroot
-./hello_chroot
-""",
-    lfs_sysroot = "//:lfs_sysroot_files",
-    tags = [
-        "manual",
-        "requires-sudo",
-    ],
-    toolchain = "//packages/chapter_07:chroot_base_toolchain",
+    build_cmd = """
+        cd /tmp/hello_world
+        gcc hello.c -o hello_chroot
+        ./hello_chroot
+    """,
+    configure_cmd = "true",
+    install_cmd = "true",
+    phase = "chroot",
     visibility = ["//visibility:public"],
     deps = [
         ":stage_hello_in_sysroot",

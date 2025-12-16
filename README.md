@@ -36,11 +36,12 @@ lfs-bzl/
 Before you begin, you'll need:
 
 - **Bazel** 6.0+ with bzlmod enabled
+- **Podman** (rootless mode) for Chapter 7-8+ container-based builds
 - **Host toolchain** meeting LFS Chapter 2 requirements:
   - GCC 4.8+, g++, make, bash, coreutils, etc.
   - Run `bazel test //packages/chapter_02:version_check_test` to verify
 - **Disk space:** ~10GB for sources and build artifacts
-- **For Chapter 7+:** sudo access for chroot operations
+- **No sudo required!** Entire build runs as regular user with rootless Podman
 
 ## 🚀 Quickstart
 
@@ -57,11 +58,11 @@ bazel build //packages/chapter_05:cross_toolchain
 # 3️⃣ Build all temporary tools (Chapter 6)
 bazel build //packages/chapter_06:all_temp_tools
 
-# 4️⃣ Stage sources for chroot builds (Chapter 7)
-bazel build //packages/chapter_07:stage_ch7_sources
+# 4️⃣ Build Chapter 7 chroot base system (rootless Podman worker - no sudo!)
+bazel build //packages/chapter_07:chroot_toolchain_phase
 
-# 5️⃣ Run all Chapter 7 chroot steps (requires sudo)
-bazel build //packages:bootstrap_ch7
+# 5️⃣ Build Chapter 8+ packages (rootless Podman worker - no sudo!)
+bazel build //packages/chapter_08:man_pages
 
 # 🧪 Validate the cross-toolchain:
 bazel run //packages/hello_world:hello_cross  # Uses Cross Toolchain (Ch 5) ✅
@@ -133,86 +134,102 @@ Host GCC → builds → Cross Toolchain (Ch 5)
 
 Each stage removes dependency on the previous, creating a fully independent system.
 
+## 🐳 Hybrid Build Architecture
+
+This project uses a unique hybrid approach across different LFS chapters:
+
+### Chapters 5-6: Native Host Builds
+
+- Run directly on your host system
+- Write to staging sysroot (`src/sysroot/`)
+- No containers, no sudo required
+- Fast, simple, cached by Bazel
+
+### 🚀 Chapters 7-8+: Rootless Podman Worker (No Sudo!)
+
+- Persistent Bazel JSON worker running in rootless Podman container
+- Container mounts staging sysroot at `/lfs`
+- All builds run as regular user (no sudo required!)
+- Fast: container stays alive across builds, amortizing startup cost
+- Isolated: `--network=none` enforces offline builds
+- Mounts virtual filesystems (`/dev`, `/proc`, `/sys`, `/run`) inside container
+
+**The Result:** Modern container-based workflow with zero sudo requirements for the entire build process.
+
 ## 🏗️ Build Progress
 
 Current implementation status:
 
-- ✅ **Chapter 5:** Cross-toolchain (5 packages)
-- ✅ **Chapter 6:** Temporary tools (17 packages)
-- ✅ **Chapter 7:** Chroot preparation (6 packages)
-- 🚧 **Chapter 8:** Final system packages (in progress)
+- ✅ **Chapter 5:** Cross-toolchain (5 packages) - Native host builds
+- ✅ **Chapter 6:** Temporary tools (17 packages) - Native host builds
+- ✅ **Chapter 7:** Chroot base system (6 packages) - Rootless Podman worker
+- ✅ **Chapter 8:** Final system (79 packages) - Rootless Podman worker
 - ⏳ **Chapter 9-11:** Configuration, kernel, bootloader (planned)
+
+**Design Decisions:**
+
+- **Init System:** systemd (not SysVinit)
+- **Strip Command:** Skipped (optional per LFS book)
+- **Expected Test Failures:** Some tests fail in chroot - this is documented and expected per LFS book
 
 See [docs/status.md](docs/status.md) for detailed progress tracking.
 
 ## ⚠️ Common Pitfalls
 
-### Sysroot Ownership After Chapter 7
+### First-time Podman Setup
 
-After running Chapter 7 builds, the sysroot ownership changes to root:root. This
-prevents re-running Chapter 5-6 builds as a regular user.
+The rootless Podman worker (used for Chapter 7-8+) requires initial setup:
 
-**Symptom**: "Permission denied" errors when building Chapter 5-6 after Chapter 7
+**Symptom**: Podman commands fail or container can't start
 
-**Detection**: The build system automatically detects this and shows a recovery message
-
-**Recovery**:
+**Solution**: Ensure Podman is installed and configured for rootless mode:
 
 ```bash
-sudo chown -R $USER:$USER src/sysroot/
+# Check Podman version
+podman --version  # Should be 3.0+
+
+# Test rootless container
+podman run --rm hello-world
 ```
 
-**Why this happens**: Chapter 7's `chroot_chown_root` prepares the chroot environment
-by changing ownership. This is expected LFS behavior.
+**Best practice**: Build container image before starting builds:
 
-**Best practice**: Build linearly (Ch5 → Ch6 → Ch7 → Ch8+) without going backwards.
-If you need to iterate on early chapters, restore ownership as shown above.
+```bash
+cd src
+bazel build //tools/podman:container_image
+```
 
-See [docs/troubleshooting.md](docs/troubleshooting.md) for detailed recovery procedures.
+See [docs/troubleshooting.md](docs/troubleshooting.md) for detailed setup and troubleshooting.
 
 ## 🔄 Cleanup and Restart
 
-### Starting Fresh (Full Rebuild: Chapter 7 → Nothing → Chapter 7)
+### Starting Fresh (Full Rebuild)
 
-To completely restart the build from scratch after completing Chapter 7:
+To completely restart the build from scratch:
 
 ```bash
 cd src
 
-# 1️⃣ IMPORTANT: Unmount virtual filesystems first (Chapter 7 mounts /dev, /proc, etc.)
-sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
-
-# 2️⃣ Verify all mounts are cleared (should show nothing)
-findmnt | grep sysroot
-
-# 3️⃣ Remove the entire sysroot directory
+# 1️⃣ Remove the entire sysroot directory
 rm -rf sysroot/
 
-# 4️⃣ Clean Bazel's cache (optional, for a truly clean build)
+# 2️⃣ Clean Bazel's cache (optional, for a truly clean build)
 bazel clean --expunge
 
-# 5️⃣ Rebuild the complete bootstrap (Chapter 5 → 6 → 7)
+# 3️⃣ Rebuild the complete bootstrap (Chapter 5 → 6 → 7)
 # Build cross-toolchain (Chapter 5) - ~5-10 minutes
 bazel build //packages/chapter_05:cross_toolchain
 
 # Build temporary tools (Chapter 6) - ~30-45 minutes
 bazel build //packages/chapter_06:all_temp_tools
 
-# Stage sources for chroot builds (Chapter 7 prep)
-bazel build //packages/chapter_07:stage_ch7_sources
-
-# Run all Chapter 7 chroot steps (requires sudo) - ~15-20 minutes
-bazel build //packages:bootstrap_ch7
-```
-
-**⚠️ WARNING:** Always unmount before removing sysroot! Removing mounted filesystems can corrupt your host system.
-
-```bash
-# Always unmount first:
-sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+# Build Chapter 7 chroot base system - ~5-10 minutes
+bazel build //packages/chapter_07:chroot_toolchain_phase
 ```
 
 **Expected total rebuild time:** ~1-2 hours depending on hardware (parallel builds used automatically)
+
+**Note**: No sudo required! The Podman worker handles all containerization internally.
 
 ### Restarting from a Specific Chapter
 
@@ -232,9 +249,6 @@ bazel build //packages/chapter_06:all_temp_tools
 **Restart Chapter 7 only:**
 
 ```bash
-# Unmount first!
-sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
-
 # Remove Chapter 7 artifacts
 rm -rf sysroot/{bin,sbin,lib,lib64,etc,var}
 rm -rf sysroot/usr/bin/{bison,perl,python3,makeinfo}
@@ -243,27 +257,6 @@ rm -rf sysroot/usr/bin/{bison,perl,python3,makeinfo}
 bazel clean
 bazel build //packages/chapter_07:chroot_finalize
 ```
-
-### Checking Mount Status
-
-Before cleanup, always check if virtual filesystems are mounted:
-
-```bash
-# Check current mounts
-findmnt | grep sysroot
-
-# Check refcount (should not exist or be 0)
-cat src/sysroot/tmp/.lfs-mount-refcount 2>/dev/null
-
-# If mounts exist, unmount them (run until refcount reaches 0)
-sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
-```
-
-**Why this matters:** Chapter 7+ operations mount `/dev`, `/proc`, `/sys`, `/run`, etc. into the sysroot. These must be unmounted before cleanup to avoid:
-
-- Permission errors during `rm -rf`
-- Accidentally affecting your host system
-- Resource leaks
 
 ### Clean Build vs Incremental Build
 

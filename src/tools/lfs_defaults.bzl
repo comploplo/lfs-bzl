@@ -23,13 +23,13 @@ PHASE_DEFAULTS = {
         "make_flags": ["-j$(nproc)"],
         "skip_ownership_check": False,
     },
-    # Chapter 7+: inside chroot (installs into /usr)
-    "ch7": {
+    # Chroot phase: Podman worker-based builds (Ch7-8+)
+    "chroot": {
         "prefix": "/usr",
         "destdir": "/",
         "build_subdir": "build",
         "make_flags": ["-j$(nproc)"],
-        "skip_ownership_check": False,
+        "skip_ownership_check": True,
     },
 }
 
