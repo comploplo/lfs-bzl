@@ -33,8 +33,8 @@ ______________________________________________________________________
 | `lfs_toolchain.bzl`  | `lfs_toolchain` rule + default toolchain selection                               |
 | `lfs_macros.bzl`     | Convenience macros (`lfs_autotools`, `lfs_c_binary`, etc.)                       |
 | `lfs_defaults.bzl`   | Phase presets for configure/make/install defaults                                |
-| `scripts/`           | Shell helpers and generated-script templates                                     |
-| `scripts/templates/` | Template scripts expanded by Starlark rules                                      |
+| `scripts/`           | Shell helpers and utility scripts                                                |
+| `scripts/templates/` | All template scripts expanded by Starlark rules (build, runner, worker)          |
 | `podman/`            | Rootless Podman worker for Chapter 7+ chroot builds (no sudo required)           |
 
 ______________________________________________________________________
@@ -248,11 +248,31 @@ to emit a wrapper that allows:
 bazel run //packages/hello_world:hello
 ```
 
-**How It Works:**
+**How It Works (Host Builds - Chapters 5-6):**
 
 1. Creates a bash wrapper script at `bazel-bin/packages/hello_world/hello`
 1. Script finds workspace root using `$BUILD_WORKSPACE_DIRECTORY` or walking up the directory tree
 1. Executes `$WORKSPACE_ROOT/sysroot/tools/bin/<binary_name>` with arguments passed through
+
+**How It Works (Chroot Builds - Chapters 7-8+):**
+
+1. Creates a bash wrapper script that displays the build log
+1. When you run `bazel run //packages/hello_world:hello_final`, it shows the chroot build output
+1. The log file is located at `bazel-bin/packages/hello_world/hello_final.log`
+
+**Example:**
+
+```bash
+$ bazel run //packages/hello_world:hello_final
+=== Build output for @@//packages/hello_world:hello_final ===
+
+Configuring hello_final...
+Building hello_final...
+Hello from LFS Final System (Chapter 8)!
+Built with native GCC from the complete LFS toolchain.
+Installing hello_final to /...
+Successfully built hello_final
+```
 
 **To enable:** Add `create_runner = True` (optionally set `binary_name` to override
 the script/binary name). Leave it unset for non-executable targets.

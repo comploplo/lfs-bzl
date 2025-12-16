@@ -1,7 +1,8 @@
 # 👋 Hello World Verification Tests
 # Tests the LFS build infrastructure and validates each toolchain stage
 
-load("//tools:lfs_build.bzl", "lfs_c_binary", "lfs_package")
+load("//tools:lfs_macros.bzl", "lfs_c_binary")
+load("//tools:lfs_package.bzl", "lfs_package")
 
 # 1️⃣ Basic host build (uses your system's GCC)
 lfs_package(
@@ -69,7 +70,7 @@ EOF
     deps = ["//packages/chapter_07:chroot_prepare"],
 )
 
-# Compile and run hello.c inside chroot
+# Compile and run hello.c inside chroot (Chapter 7 temporary tools)
 lfs_package(
     name = "hello_chroot",
     build_cmd = """
@@ -85,4 +86,120 @@ lfs_package(
         ":stage_hello_in_sysroot",
         "//packages/chapter_07:chroot_prepare",
     ],
+)
+
+# --------------------------------------------------------------------------- #
+# 5️⃣ Final System toolchain validation (Chapter 8 GCC)
+# --------------------------------------------------------------------------- #
+
+# Validates the Chapter 8 final system toolchain by compiling and running code
+# using the fully-built GCC compiler inside the chroot environment.
+#
+# This uses the native GCC built as part of Chapter 8, not the temporary
+# cross-compiled tools from Chapter 6-7.
+#
+# Usage:
+#   bazel build //packages/hello_world:hello_final
+#
+# Note: First run will build Chapter 8 dependencies. Subsequent runs are cached.
+#
+# For a quick validation of the Chapter 8 toolchain:
+#   bazel build //packages/chapter_08:ch8_smoke_versions
+
+lfs_package(
+    name = "hello_final",
+    build_cmd = """
+        # Validate Chapter 8 GCC is available
+        if ! command -v gcc &> /dev/null; then
+            echo "" >&2
+            echo "=========================================================" >&2
+            echo "ERROR: GCC not found in PATH" >&2
+            echo "=========================================================" >&2
+            echo "" >&2
+            echo "Chapter 8 toolchain is not built. Please build it first:" >&2
+            echo "  bazel build //packages/chapter_08:gcc" >&2
+            echo "" >&2
+            echo "Or build all Chapter 8 packages:" >&2
+            echo "  bazel build //packages/chapter_08:ch8_all" >&2
+            echo "" >&2
+            echo "For a quick validation after building:" >&2
+            echo "  bazel build //packages/chapter_08:ch8_smoke_versions" >&2
+            echo "" >&2
+            exit 1
+        fi
+
+        # Verify GCC can actually compile (not just exist in PATH)
+        echo 'int main(){return 0;}' > /tmp/gcc_check.c
+        if ! gcc -o /tmp/gcc_check /tmp/gcc_check.c 2>/dev/null; then
+            echo "" >&2
+            echo "=========================================================" >&2
+            echo "ERROR: GCC exists but cannot compile" >&2
+            echo "=========================================================" >&2
+            echo "" >&2
+            echo "The toolchain may be incomplete. Try rebuilding:" >&2
+            echo "  bazel build //packages/chapter_08:gcc" >&2
+            echo "" >&2
+            rm -f /tmp/gcc_check.c
+            exit 1
+        fi
+        rm -f /tmp/gcc_check /tmp/gcc_check.c
+
+        # Build hello_final (reduced verbosity - use hello_final_verbose for debugging)
+        cat > /tmp/hello_final.c <<'EOF'
+#include <stdio.h>
+
+int main(void)
+{
+    printf("Hello from LFS Final System (Chapter 8)!\\n");
+    printf("Built with native GCC from the complete LFS toolchain.\\n");
+    return 0;
+}
+EOF
+        gcc /tmp/hello_final.c -o /tmp/hello_final
+        /tmp/hello_final
+        rm -f /tmp/hello_final.c /tmp/hello_final
+    """,
+    configure_cmd = "true",
+    create_runner = True,
+    install_cmd = "true",
+    phase = "chroot",
+    visibility = ["//visibility:public"],
+    deps = ["//packages/chapter_08:gcc"],
+)
+
+# Verbose version for debugging toolchain issues
+# Usage: bazel build //packages/hello_world:hello_final_verbose
+lfs_package(
+    name = "hello_final_verbose",
+    build_cmd = """
+        # Same prerequisite validation as hello_final
+        if ! command -v gcc &> /dev/null; then
+            echo "ERROR: GCC not found. Build Chapter 8 first:" >&2
+            echo "  bazel build //packages/chapter_08:gcc" >&2
+            exit 1
+        fi
+
+        cat > /tmp/hello_final.c <<'EOF'
+#include <stdio.h>
+
+int main(void)
+{
+    printf("Hello from LFS Final System (Chapter 8)!\\n");
+    printf("Built with native GCC from the complete LFS toolchain.\\n");
+    return 0;
+}
+EOF
+        echo "=== Compiling with verbose output ==="
+        gcc -v /tmp/hello_final.c -o /tmp/hello_final
+        echo ""
+        echo "=== Running ==="
+        /tmp/hello_final
+        rm -f /tmp/hello_final.c /tmp/hello_final
+    """,
+    configure_cmd = "true",
+    install_cmd = "true",
+    phase = "chroot",
+    tags = ["manual"],  # Only build when explicitly requested
+    visibility = ["//visibility:public"],
+    deps = ["//packages/chapter_08:gcc"],
 )

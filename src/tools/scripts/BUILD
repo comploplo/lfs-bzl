@@ -18,22 +18,3 @@ filegroup(
     name = "test_wrapper",
     srcs = ["test_wrapper.sh"],
 )
-
-# ----------------------------------------------------------------------------
-# Re-exports from templates/ subdirectory
-# ----------------------------------------------------------------------------
-
-alias(
-    name = "lfs_runner_script_template",
-    actual = "//tools/scripts/templates:lfs_runner_script_template",
-)
-
-alias(
-    name = "lfs_package_build_template",
-    actual = "//tools/scripts/templates:lfs_package_build_template",
-)
-
-alias(
-    name = "lfs_sysroot_stage_files_wrapper_template",
-    actual = "//tools/scripts/templates:lfs_sysroot_stage_files_wrapper_template",
-)

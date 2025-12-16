@@ -24,7 +24,8 @@ lfs-bzl/
 │   │   ├── chapter_05/     # Cross-toolchain (5 packages)
 │   │   ├── chapter_06/     # Temporary tools (17 packages)
 │   │   ├── chapter_07/     # Chroot preparation (6 packages)
-│   │   └── ...
+│   │   ├── chapter_08/     # Final system (79 packages) 🎉
+│   │   └── hello_world/    # Toolchain validation tests
 │   ├── tools/              # Custom Bazel rules (lfs_build.bzl, etc.)
 │   ├── sysroot/            # 🎯 Build artifacts (your LFS system!)
 │   └── MODULE.bazel        # Source package definitions
@@ -61,11 +62,13 @@ bazel build //packages/chapter_06:all_temp_tools
 # 4️⃣ Build Chapter 7 chroot base system (rootless Podman worker - no sudo!)
 bazel build //packages/chapter_07:chroot_toolchain_phase
 
-# 5️⃣ Build Chapter 8+ packages (rootless Podman worker - no sudo!)
-bazel build //packages/chapter_08:man_pages
+# 5️⃣ Build Chapter 8 final system (79 packages - rootless Podman worker)
+bazel build //packages/chapter_08:ch8_all
 
-# 🧪 Validate the cross-toolchain:
-bazel run //packages/hello_world:hello_cross  # Uses Cross Toolchain (Ch 5) ✅
+# 🧪 Validate each toolchain stage:
+bazel build //packages/hello_world:hello_cross  # Cross Toolchain (Ch 5) ✅
+bazel build //packages/hello_world:hello_chroot # Chroot Tools (Ch 7) ✅
+bazel build //packages/hello_world:hello_final  # Final System (Ch 8) ✅
 ```
 
 **Build Artifacts Location:** `src/sysroot/`
@@ -113,11 +116,17 @@ This project builds **three distinct toolchains** in sequence, each more capable
   - Requires chroot environment to execute
   - Validation happens in Chapter 7 when building inside chroot
 
-### 4️⃣ Final System Toolchain (Chapter 7+) 🎉
+### 4️⃣ Final System Toolchain (Chapter 8) 🎉
 
+- **Bazel Target:** `//packages/chapter_08:toolchain`
 - **Location:** `$LFS/usr/bin` (native GCC, built inside chroot)
-- **Purpose:** Build the complete final system (Chapter 8+)
-- **Built inside chroot:** Uses the temporary tools to compile itself
+- **Purpose:** The complete, self-hosting toolchain for the final system
+- **Key Components:**
+  - Native GCC 14.2 (built inside chroot, no host dependencies)
+  - Native Binutils 2.43.1
+  - Glibc 2.40
+  - 79 total packages (compression, security, python, systemd, etc.)
+- **Validation:** `bazel build //packages/hello_world:hello_final`
 - **Result:** A fully independent, bootable Linux system!
 
 ### 🎯 How They Work Together
@@ -127,12 +136,20 @@ Host GCC → builds → Cross Toolchain (Ch 5)
                         ↓
           Cross Toolchain → builds → Temp Tools (Ch 6)
                                           ↓
-                      Temp Tools → builds → Final System (Ch 7+)
+                      Temp Tools → builds → Chroot Base (Ch 7)
                                                   ↓
-                                            Bootable Linux! 🐧
+                            Chroot Base → builds → Final System (Ch 8)
+                                                        ↓
+                                                  Bootable Linux! 🐧
 ```
 
 Each stage removes dependency on the previous, creating a fully independent system.
+
+**Validation targets at each stage:**
+
+- `//packages/hello_world:hello_cross` - Cross toolchain (runs on host)
+- `//packages/hello_world:hello_chroot` - Chroot tools (runs in container)
+- `//packages/hello_world:hello_final` - Final system GCC (builds deps if needed, cached after)
 
 ## 🐳 Hybrid Build Architecture
 
@@ -192,11 +209,11 @@ podman --version  # Should be 3.0+
 podman run --rm hello-world
 ```
 
-**Best practice**: Build container image before starting builds:
+**Best practice**: Build container image before starting chroot builds:
 
 ```bash
 cd src
-bazel build //tools/podman:container_image
+bazel run //tools/podman:container_image
 ```
 
 See [docs/troubleshooting.md](docs/troubleshooting.md) for detailed setup and troubleshooting.

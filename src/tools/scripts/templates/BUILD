@@ -28,3 +28,21 @@ filegroup(
     name = "lfs_sysroot_stage_files_wrapper_template",
     srcs = ["lfs_sysroot_stage_files_wrapper.sh"],
 )
+
+# Template for chroot build runner scripts (displays build log)
+filegroup(
+    name = "lfs_chroot_runner_script_template",
+    srcs = ["lfs_chroot_runner_script.sh.tpl"],
+)
+
+# Template for Podman worker launcher script
+filegroup(
+    name = "worker_launcher_template",
+    srcs = ["worker_launcher.sh.tpl"],
+)
+
+# Template for Podman worker flagfile arguments
+filegroup(
+    name = "worker_flagfile_template",
+    srcs = ["worker_flagfile.tpl"],
+)

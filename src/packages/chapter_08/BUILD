@@ -12,7 +12,9 @@ Critical path: glibc -> binutils -> gcc -> everything else
 Test dependencies: gcc and coreutils tests require :shadow (for tester user)
 """
 
-load("//tools:lfs_build.bzl", "lfs_configure_make", "lfs_package", "lfs_toolchain")
+load("//tools:lfs_macros.bzl", "lfs_configure_make")
+load("//tools:lfs_package.bzl", "lfs_package")
+load("//tools:lfs_toolchain.bzl", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -58,10 +60,12 @@ lfs_package(
 # Expected test failures: io/tst-lchmod (chroot), nss/tst-nss-files-hosts-multi (timeout)
 lfs_package(
     name = "glibc",
-    srcs = ["@glibc_src//file"],
+    srcs = [
+        "@glibc_src//file",
+        "@tzdata_src//file",
+    ],
     build_cmd = "cd build && make",
     configure_cmd = """
-        patch -Np1 -i ../glibc-*-fhs-*.patch
         mkdir -v build
         cd build
         echo "rootsbindir=/usr/sbin" > configparms
@@ -135,8 +139,9 @@ rpc: files
 # End /etc/nsswitch.conf
 EOF
 
-        # Install timezone data
-        tar -xf ../../tzdata*.tar.gz
+        # Install timezone data (find tarball path from sources list)
+        TZDATA_TAR=$(grep tzdata "$LFS_PKG_SRCS_FILE")
+        tar -xf "$TZDATA_TAR"
         ZONEINFO=/usr/share/zoneinfo
         mkdir -pv $ZONEINFO/{posix,right}
         for tz in etcetera southamerica northamerica europe africa antarctica asia australasia backward; do
@@ -160,7 +165,6 @@ EOF
     patches = ["@glibc_fhs_patch//file"],
     phase = "chroot",
     test_cmd = "cd build && make check",
-    deps = ["@tzdata_src//file"],
 )
 
 # 4. Zlib - Compression library
@@ -376,7 +380,6 @@ lfs_package(
     build_cmd = "make",
     configure_cmd = """
         python3 -c 'from pty import spawn; spawn(["echo", "ok"])'
-        patch -Np1 -i ../expect-*-gcc14-*.patch
         ./configure --prefix=/usr \\
             --with-tcl=/usr/lib \\
             --enable-shared \\
@@ -648,7 +651,9 @@ lfs_package(
 lfs_package(
     name = "gcc",
     srcs = ["@gcc_src//file"],
-    build_cmd = "cd build && make",
+    # NOTE: GCC is extremely memory-hungry. Limit to -j4 to avoid OOM kills.
+    # With unlimited parallelism, each cc1/cc1plus process can use 1-2GB RAM.
+    build_cmd = "cd build && make -j4",
     configure_cmd = """
         case $(uname -m) in
           x86_64)
@@ -673,8 +678,8 @@ lfs_package(
         cd build
         make install
         chown -v -R root:root /usr/lib/gcc/$(gcc -dumpmachine)/14.2.0/include{,-fixed}
-        ln -svr /usr/bin/cpp /usr/lib
-        ln -sv gcc.1 /usr/share/man/man1/cc.1
+        ln -sfvr /usr/bin/cpp /usr/lib
+        ln -sfv gcc.1 /usr/share/man/man1/cc.1
         ln -sfv ../../libexec/gcc/$(gcc -dumpmachine)/14.2.0/liblto_plugin.so /usr/lib/bfd-plugins/
 
         # Verify installation
@@ -1799,6 +1804,48 @@ lfs_package(
         make check
     """,
     deps = [":util_linux"],
+)
+
+###############################################################################
+# Smoke Test / Validation
+###############################################################################
+
+# Quick validation of core Chapter 8 toolchain inside chroot
+# Pattern follows chapter_07/BUILD:chroot_smoke_versions
+lfs_package(
+    name = "ch8_smoke_versions",
+    build_cmd = """
+        echo "=== Chapter 8 Toolchain Validation ==="
+        echo ""
+        echo "GCC version:"
+        gcc --version | head -1
+        echo "G++ version:"
+        g++ --version | head -1
+        echo "Binutils (ld):"
+        ld --version | head -1
+        echo "Glibc (ldd):"
+        ldd --version | head -1
+        echo "Bash:"
+        bash --version | head -1
+        echo "Make:"
+        make --version | head -1
+        echo "Python:"
+        python3 --version
+        echo "Perl:"
+        perl -V:version
+        echo ""
+        echo "=== Compiler Test ==="
+        echo 'int main(){return 0;}' > /tmp/ch8_test.c
+        gcc -o /tmp/ch8_test /tmp/ch8_test.c
+        /tmp/ch8_test && echo "GCC compilation: OK"
+        rm -f /tmp/ch8_test /tmp/ch8_test.c
+        echo ""
+        echo "=== Chapter 8 Smoke Test PASSED ==="
+    """,
+    configure_cmd = "true",
+    install_cmd = "true",
+    phase = "chroot",
+    deps = [":gcc"],
 )
 
 ###############################################################################

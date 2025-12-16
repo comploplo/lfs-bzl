@@ -9,11 +9,41 @@ set -euo pipefail
 # Set it explicitly so we can find realpath, podman, etc.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-CONTAINER_TAR="{CONTAINER_TAR}"
+IMAGE_NAME="lfs-builder:bookworm"
 SYSROOT_REL="{SYSROOT_REL}"
+
+# Check if container image exists
+if ! podman image exists "$IMAGE_NAME" 2>/dev/null; then
+    echo "" >&2
+    echo "=========================================================" >&2
+    echo "ERROR: Container image '$IMAGE_NAME' not found" >&2
+    echo "=========================================================" >&2
+    echo "" >&2
+    echo "The LFS worker container must be built before running chroot builds." >&2
+    echo "" >&2
+    echo "Build the container with:" >&2
+    echo "  bazel run //tools/podman:container_image" >&2
+    echo "" >&2
+    echo "This only needs to be done once (or when updating the worker)." >&2
+    echo "=========================================================" >&2
+    exit 1
+fi
 
 EXECROOT="${PWD}"
 SYSROOT_PATH="$(realpath "$SYSROOT_REL")"
+
+# Generate unique container name for tracking and cleanup
+CONTAINER_NAME="lfs-worker-$(date +%s)-$$"
+
+# Cleanup function for abnormal termination
+cleanup_container() {
+    echo "[LAUNCHER] Cleaning up container $CONTAINER_NAME..." >&2
+    podman stop --time 10 "$CONTAINER_NAME" 2>/dev/null || true
+    podman rm -f "$CONTAINER_NAME" 2>/dev/null || true
+}
+
+# Register cleanup on script exit (SIGTERM, SIGINT, EXIT)
+trap cleanup_container EXIT TERM INT
 
 # Bazel external repos are symlinked from execroot/external/ to a shared cache
 # Mount the external directory so symlinks resolve correctly
@@ -37,13 +67,6 @@ if [ ! -d "$SYSROOT_PATH" ]; then
     exit 1
 fi
 
-# Load container image if not present
-if ! podman image exists lfs-builder:bookworm 2>/dev/null; then
-  echo "[LAUNCHER] Loading container image..." >&2
-  podman load < "$CONTAINER_TAR" >/dev/null
-  echo "[LAUNCHER] Container image loaded" >&2
-fi
-
 # Launch worker container
 # Mounts:
 #   - /lfs:rw - Sysroot staging tree (read-write for builds)
@@ -56,13 +79,15 @@ fi
 #   - --security-opt label=disable: Disable SELinux labeling (reduces friction)
 
 exec podman run \
+  --name "$CONTAINER_NAME" \
   --rm \
   --interactive \
   --privileged \
   --network=none \
   --security-opt label=disable \
+  --stop-timeout 30 \
   --volume "${SYSROOT_PATH}:/lfs:rw" \
   --volume "${EXECROOT}:/execroot:rw" \
   --volume "${EXTERNAL_DIR}:${EXTERNAL_DIR}:rw" \
-  lfs-builder:bookworm \
+  "$IMAGE_NAME" \
   python3 /work/worker.py --external-dir "${EXTERNAL_DIR}"

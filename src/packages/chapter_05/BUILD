@@ -5,7 +5,9 @@ Targets use Bazel primitives plus the LFS build macros. Commands mirror the LFS
 book but are staged for refinement once we run real builds.
 """
 
-load("//tools:lfs_build.bzl", "lfs_autotools", "lfs_package", "lfs_toolchain")
+load("//tools:lfs_macros.bzl", "lfs_autotools")
+load("//tools:lfs_package.bzl", "lfs_package")
+load("//tools:lfs_toolchain.bzl", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 

@@ -44,12 +44,12 @@ EOF
 
 # Get paths to worker components
 WORKER_LAUNCHER="$1"
-CONTAINER_TAR="$2"
 
-# Ensure container image is loaded
+# Verify container image exists
 if ! podman image exists lfs-builder:bookworm 2>/dev/null; then
-    echo "Loading container image..."
-    podman load < "$CONTAINER_TAR" >/dev/null
+    echo "ERROR: Container image 'lfs-builder:bookworm' not found"
+    echo "Build it first with: bazel run //tools/podman:container_image"
+    exit 1
 fi
 
 # Run worker with timeout

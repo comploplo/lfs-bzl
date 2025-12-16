@@ -13,7 +13,8 @@ This chapter builds 6 packages:
 - util-linux (system utilities)
 """
 
-load("//tools:lfs_build.bzl", "lfs_package", "lfs_toolchain")
+load("//tools:lfs_package.bzl", "lfs_package")
+load("//tools:lfs_toolchain.bzl", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 

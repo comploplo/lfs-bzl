@@ -9,12 +9,61 @@ Protocol: https://bazel.build/remote/persistent
 """
 
 import argparse
+import atexit
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
+
+# Global state for cleanup
+_mounts = []
+_cleanup_done = False
+
+# Build timeout in seconds (2 hours default)
+DEFAULT_BUILD_TIMEOUT = 7200
+
+
+def cleanup_mounts():
+    """Unmount all VFS mounts in reverse order for graceful shutdown."""
+    global _cleanup_done
+    if _cleanup_done:
+        return
+    _cleanup_done = True
+
+    if not _mounts:
+        return
+
+    sys.stderr.write("[WORKER] Cleaning up mounts...\n")
+    sys.stderr.flush()
+
+    # Unmount in reverse order (LIFO) to handle nested mounts
+    for mount_point in reversed(_mounts):
+        try:
+            # Use lazy unmount (-l) to handle busy filesystems
+            subprocess.run(['umount', '-l', mount_point],
+                          check=False, capture_output=True)
+            sys.stderr.write(f"[WORKER] Unmounted {mount_point}\n")
+        except Exception as e:
+            sys.stderr.write(f"[WORKER] Warning: Failed to unmount {mount_point}: {e}\n")
+        sys.stderr.flush()
+
+
+def signal_handler(signum, frame):
+    """Handle SIGTERM and SIGINT for graceful shutdown."""
+    sig_name = signal.Signals(signum).name
+    sys.stderr.write(f"[WORKER] Received {sig_name}, shutting down gracefully...\n")
+    sys.stderr.flush()
+    cleanup_mounts()
+    sys.exit(128 + signum)
+
+
+# Register signal handlers and atexit cleanup
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+atexit.register(cleanup_mounts)
 
 
 def prepare_chroot(external_dir):
@@ -49,19 +98,28 @@ def prepare_chroot(external_dir):
         os.makedirs(dir_path, exist_ok=True)
 
     try:
-        # Bind mount virtual filesystems
+        # Bind mount virtual filesystems and track for cleanup
         subprocess.run(['mount', '--rbind', '/dev', '/lfs/dev'], check=True)
+        _mounts.append('/lfs/dev')
+
         subprocess.run(['mount', '--rbind', '/proc', '/lfs/proc'], check=True)
+        _mounts.append('/lfs/proc')
+
         subprocess.run(['mount', '--rbind', '/sys', '/lfs/sys'], check=True)
+        _mounts.append('/lfs/sys')
+
         subprocess.run(['mount', '--rbind', '/run', '/lfs/run'], check=True)
+        _mounts.append('/lfs/run')
 
         # Bind mount execroot so build scripts can access workspace
         subprocess.run(['mount', '--rbind', '/execroot', '/lfs/execroot'], check=True)
+        _mounts.append('/lfs/execroot')
 
         # Bind mount external directory at its absolute path so symlinks work
         if external_dir:
             external_mount_point = f'/lfs{external_dir}'
             subprocess.run(['mount', '--rbind', external_dir, external_mount_point], check=True)
+            _mounts.append(external_mount_point)
             sys.stderr.write(f"[WORKER] Mounted {external_dir} -> {external_mount_point}\n")
             sys.stderr.flush()
 
@@ -147,10 +205,21 @@ def process_request(req):
               [f'{k}={v}' for k, v in env.items()] + \
               ['/usr/bin/bash', '-lc', 'source /tmp/build.sh']
 
-        sys.stderr.write(f"[WORKER] Executing in chroot...\n")
+        # Get timeout from request or use default (2 hours)
+        timeout_secs = req.get('timeout', DEFAULT_BUILD_TIMEOUT)
+        sys.stderr.write(f"[WORKER] Executing in chroot (timeout: {timeout_secs}s)...\n")
         sys.stderr.flush()
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_secs)
+        except subprocess.TimeoutExpired:
+            sys.stderr.write(f"[WORKER] Build timed out after {timeout_secs} seconds\n")
+            sys.stderr.flush()
+            # Write timeout message to log
+            log_path = args.log if args.log.startswith('/') else f'/execroot/{args.log}'
+            with open(log_path, 'w') as f:
+                f.write(f"BUILD TIMEOUT: Exceeded {timeout_secs} seconds\n")
+            return {'requestId': request_id, 'exitCode': 124, 'error': 'timeout'}
 
         # Write outputs (paths relative to execroot)
         log_path = args.log if args.log.startswith('/') else f'/execroot/{args.log}'

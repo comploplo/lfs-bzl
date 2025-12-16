@@ -220,16 +220,33 @@ cd "$WORKDIR"
         )
 
     if runner_name:
-        ctx.actions.expand_template(
-            template = ctx.file._runner_template,
-            output = output,
-            substitutions = {
-                "{name}": ctx.label.name,
-                "{binary}": runner_name,
-                "{label}": str(ctx.label),
-            },
-            is_executable = True,
-        )
+        # Use chroot runner for chroot phase builds (displays log file)
+        # Use standard runner for other phases (executes binary from sysroot)
+        if _is_chroot_phase(phase):
+            # Chroot builds: runner displays the build log
+            log_path = ctx.label.package + "/" + ctx.label.name + ".log"
+            ctx.actions.expand_template(
+                template = ctx.file._chroot_runner_template,
+                output = output,
+                substitutions = {
+                    "{name}": ctx.label.name,
+                    "{label}": str(ctx.label),
+                    "{log_path}": log_path,
+                },
+                is_executable = True,
+            )
+        else:
+            # Non-chroot builds: runner executes binary from sysroot
+            ctx.actions.expand_template(
+                template = ctx.file._runner_template,
+                output = output,
+                substitutions = {
+                    "{name}": ctx.label.name,
+                    "{binary}": runner_name,
+                    "{label}": str(ctx.label),
+                },
+                is_executable = True,
+            )
 
         return [DefaultInfo(
             files = depset([output]),
@@ -321,11 +338,15 @@ _lfs_package_rule = rule(
             default = False,
         ),
         "_runner_template": attr.label(
-            default = "//tools/scripts:lfs_runner_script_template",
+            default = "//tools/scripts/templates:lfs_runner_script_template",
+            allow_single_file = True,
+        ),
+        "_chroot_runner_template": attr.label(
+            default = "//tools/scripts/templates:lfs_chroot_runner_script_template",
             allow_single_file = True,
         ),
         "_build_template": attr.label(
-            default = "//tools/scripts:lfs_package_build_template",
+            default = "//tools/scripts/templates:lfs_package_build_template",
             allow_single_file = True,
         ),
         "_worker_launcher": attr.label(
@@ -334,7 +355,7 @@ _lfs_package_rule = rule(
             cfg = "exec",
         ),
         "_worker_flagfile_template": attr.label(
-            default = "//tools/podman:worker_flagfile_template",
+            default = "//tools/scripts/templates:worker_flagfile_template",
             allow_single_file = True,
         ),
     },

@@ -444,6 +444,61 @@ bazel build --jobs=8 //packages/chapter_06:all_temp_tools
 
 ______________________________________________________________________
 
+### Out of memory (OOM) during GCC build
+
+**Symptoms:**
+
+```
+ERROR: Worker process did not return a WorkResponse
+# Or system becomes unresponsive, other processes killed
+```
+
+Check system logs:
+
+```bash
+journalctl --user -n 50 | grep -i oom
+# Shows: "A process of this unit has been killed by the OOM killer"
+```
+
+**Root Cause:**
+
+GCC is extremely memory-hungry. With unlimited parallelism (`make -j$(nproc)`), each
+`cc1`/`cc1plus` compiler process can consume 1-2GB RAM. On a system with 16 cores,
+this could require 16-32GB RAM simultaneously.
+
+**Solutions:**
+
+The gcc target in `chapter_08/BUILD` is already limited to `-j4` to prevent this:
+
+```python
+build_cmd = "cd build && make -j4",  # Limited to prevent OOM
+```
+
+If you still hit OOM:
+
+```bash
+# Option 1: Further reduce parallelism in chapter_08/BUILD
+build_cmd = "cd build && make -j2",
+
+# Option 2: Limit Bazel worker instances globally in .bazelrc
+build --worker_max_instances=LfsChrootBuild=1
+
+# Option 3: Add swap space temporarily
+sudo fallocate -l 8G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+# After build: sudo swapoff /swapfile && sudo rm /swapfile
+```
+
+**Memory Requirements:**
+
+- GCC build with `-j4`: ~8GB RAM recommended
+- GCC build with `-j8`: ~16GB RAM recommended
+- GCC build with `-j$(nproc)` on 16 cores: 16-32GB RAM
+
+______________________________________________________________________
+
 ### Out of disk space
 
 **Symptoms:**

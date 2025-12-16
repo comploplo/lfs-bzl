@@ -11,7 +11,9 @@ This chapter builds 17 packages in dependency order:
 - Tier 4: Toolchain rebuild (Binutils Pass 2, GCC Pass 2)
 """
 
-load("//tools:lfs_build.bzl", "lfs_autotools", "lfs_configure_make", "lfs_package", "lfs_toolchain")
+load("//tools:lfs_macros.bzl", "lfs_autotools", "lfs_configure_make")
+load("//tools:lfs_package.bzl", "lfs_package")
+load("//tools:lfs_toolchain.bzl", "lfs_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
