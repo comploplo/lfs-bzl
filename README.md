@@ -40,7 +40,7 @@ Before you begin, you'll need:
 - **Podman** (rootless mode) for Chapter 7-8+ container-based builds
 - **Host toolchain** meeting LFS Chapter 2 requirements:
   - GCC 4.8+, g++, make, bash, coreutils, etc.
-  - Run `bazel test //packages/chapter_02:version_check_test` to verify
+  - Run `bazel test //packages/chapter_02:version_check_test` to verify your environment.
 - **Disk space:** ~10GB for sources and build artifacts
 - **No sudo required!** Entire build runs as regular user with rootless Podman
 

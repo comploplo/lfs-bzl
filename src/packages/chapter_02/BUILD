@@ -1,11 +1,10 @@
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_test(
+py_test(
     name = "version_check_test",
-    srcs = ["version_check_test.cc"],
-    copts = ["-std=c++17"],
+    srcs = ["version_check_test.py"],
     tags = [
         "local",
         "no-sandbox",
