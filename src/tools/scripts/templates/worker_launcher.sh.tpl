@@ -38,12 +38,20 @@ CONTAINER_NAME="lfs-worker-$(date +%s)-$$"
 # Cleanup function for abnormal termination
 cleanup_container() {
     echo "[LAUNCHER] Cleaning up container $CONTAINER_NAME..." >&2
-    podman stop --time 10 "$CONTAINER_NAME" 2>/dev/null || true
+    podman stop --time 5 "$CONTAINER_NAME" 2>/dev/null || true
     podman rm -f "$CONTAINER_NAME" 2>/dev/null || true
 }
 
-# Register cleanup on script exit (SIGTERM, SIGINT, EXIT)
-trap cleanup_container EXIT TERM INT
+# Register cleanup on script exit (SIGTERM, SIGINT, EXIT, HUP)
+trap cleanup_container EXIT TERM INT HUP
+
+# Clean up any stale containers from previous runs that weren't properly cleaned
+# This handles cases where Bazel killed workers without proper cleanup
+stale_containers=$(podman ps -a -q --filter "name=lfs-worker-" --filter "status=created" --filter "status=exited" 2>/dev/null || true)
+if [ -n "$stale_containers" ]; then
+    echo "[LAUNCHER] Cleaning up stale containers from previous runs..." >&2
+    echo "$stale_containers" | xargs -r podman rm -f 2>/dev/null || true
+fi
 
 # Bazel external repos are symlinked from execroot/external/ to a shared cache
 # Mount the external directory so symlinks resolve correctly
@@ -78,7 +86,9 @@ fi
 #   - --network=none: Enforce offline builds (no network access)
 #   - --security-opt label=disable: Disable SELinux labeling (reduces friction)
 
-exec podman run \
+# Run podman as a child process (not exec) so trap handlers can fire
+# when Bazel terminates the worker
+podman run \
   --name "$CONTAINER_NAME" \
   --rm \
   --interactive \
@@ -91,3 +101,6 @@ exec podman run \
   --volume "${EXTERNAL_DIR}:${EXTERNAL_DIR}:rw" \
   "$IMAGE_NAME" \
   python3 /work/worker.py --external-dir "${EXTERNAL_DIR}"
+
+# Capture exit code and exit (trap will run on EXIT)
+exit $?

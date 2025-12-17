@@ -199,7 +199,7 @@ lfs_package(
     install_cmd = """
         make PREFIX=/usr install
         cp -av libbz2.so.* /usr/lib
-        ln -sv libbz2.so.1.0.8 /usr/lib/libbz2.so
+        ln -sfv libbz2.so.1.0.8 /usr/lib/libbz2.so
         cp -v bzip2-shared /usr/bin/bzip2
         for i in /usr/bin/{bzcat,bunzip2}; do
             ln -sfv bzip2 $i
@@ -321,8 +321,8 @@ lfs_package(
     """,
     install_cmd = """
         make install
-        ln -sv flex /usr/bin/lex
-        ln -sv flex.1 /usr/share/man/man1/lex.1
+        ln -sfv flex /usr/bin/lex
+        ln -sfv flex.1 /usr/share/man/man1/lex.1
     """,
     phase = "chroot",
     test_cmd = "make check",
@@ -432,8 +432,8 @@ lfs_package(
     """,
     install_cmd = """
         make install
-        ln -sv pkgconf /usr/bin/pkg-config
-        ln -sv pkgconf.1 /usr/share/man/man1/pkg-config.1
+        ln -sfv pkgconf /usr/bin/pkg-config
+        ln -sfv pkgconf.1 /usr/share/man/man1/pkg-config.1
     """,
     phase = "chroot",
     deps = [":glibc"],
@@ -1356,7 +1356,7 @@ lfs_package(
     install_cmd = """
         rm -f /usr/bin/gawk-*
         make install
-        ln -sv gawk.1 /usr/share/man/man1/awk.1
+        ln -sfv gawk.1 /usr/share/man/man1/awk.1
         mkdir -pv /usr/share/doc/gawk-*
         cp -v doc/{awkfoai.txt,*.{eps,pdf,jpg}} /usr/share/doc/gawk-* 2>/dev/null || true
     """,
@@ -1553,11 +1553,11 @@ lfs_package(
     """,
     install_cmd = """
         make install
-        ln -sv vim /usr/bin/vi
+        ln -sfv vim /usr/bin/vi
         for L in /usr/share/man/{,*/}man1/vim.1; do
-            ln -sv vim.1 $(dirname $L)/vi.1
+            ln -sfv vim.1 $(dirname $L)/vi.1
         done
-        ln -sv ../vim/vim*/doc /usr/share/doc/vim-*
+        ln -sfv ../vim/vim*/doc /usr/share/doc/vim-*
     """,
     phase = "chroot",
     test_cmd = """
@@ -1593,6 +1593,7 @@ lfs_package(
 )
 
 # 74. systemd - System and service manager
+# NOTE: systemd_src must be first so SRC_DIR is set correctly
 lfs_package(
     name = "systemd",
     srcs = [
@@ -1646,6 +1647,7 @@ lfs_package(
         ninja test || true
     """,
     deps = [
+        ":gperf",
         ":jinja2",
         ":kmod",
         ":libcap",

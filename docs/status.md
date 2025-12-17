@@ -27,7 +27,7 @@
 | Hello World Test  | ✓ Done | Builds, installs to sysroot/tools/bin                 |
 | Bazel Run Support | ✓ Done | `bazel run` executes from sysroot                     |
 | Host Prereq Check | ✓ Done | `bazel test //packages/chapter_02:version_check_test` |
-| Podman Worker     | ✓ Done | Rootless Bazel JSON worker in Podman container        |
+| Podman Worker     | ✓ Done | Rootless Bazel JSON worker (single instance)          |
 
 ## Phase 2: Package Definitions (Chapter 3) ✅ COMPLETE
 
@@ -161,14 +161,32 @@ See [docs/troubleshooting.md](troubleshooting.md) for full details on expected t
 | /etc/lfs-release | ✅ Done | Version identifier (12.2)                 |
 | /etc/lsb-release | ✅ Done | Linux Standards Base compliance           |
 | /etc/os-release  | ✅ Done | systemd/desktop environment compatibility |
+| Disk image       | ✅ Done | `//packages/chapter_11:create_disk_image` |
 
 ## 🎉 What's Next?
 
 The LFS build is **complete**. The sysroot contains a bootable Linux 12.2 system with systemd.
 
-**To boot the system:**
+**To boot the system with QEMU:**
 
-1. Copy sysroot to a physical/virtual disk partition
+```bash
+# Build the disk image
+bazel build //packages/chapter_11:create_disk_image
+
+# Boot with QEMU
+qemu-system-x86_64 \
+  -m 2G -enable-kvm \
+  -kernel sysroot/boot/vmlinuz-6.10.5-lfs-12.2 \
+  -append "root=/dev/sda rw console=ttyS0 init=/sbin/init" \
+  -drive file=sysroot/lfs.img,format=raw \
+  -nographic
+
+# Exit QEMU: Ctrl-a x
+```
+
+**To boot on real hardware:**
+
+1. Copy sysroot to a physical disk partition
 1. Install GRUB to the disk's MBR/ESP
 1. Update /etc/fstab with actual device paths
 1. Reboot!
@@ -176,7 +194,6 @@ The LFS build is **complete**. The sysroot contains a bootable Linux 12.2 system
 **Optional next steps:**
 
 - Build BLFS packages for additional functionality
-- Create a disk image for easy deployment
 - Add custom packages or configurations
 
 ## 📊 Build Logs
@@ -191,16 +208,34 @@ cat bazel-out/lfs-logs/gcc.log
 ls -lh bazel-out/lfs-logs/
 ```
 
+## ⚠️ Important: Cache Consistency
+
+The sysroot and Bazel cache must stay in sync. If you need to rebuild:
+
+```bash
+# Always clean BOTH together
+rm -rf sysroot/
+bazel clean --expunge
+```
+
+If you clean only the Bazel cache but keep the sysroot, install scripts may fail when files already exist.
+
 ## 🚀 Quick Commands
 
 ```bash
 cd src
 
-# Build everything up to Chapter 8
+# Build everything up to Chapter 11
 bazel build //packages/chapter_05:cross_toolchain
 bazel build //packages/chapter_06:all_temp_tools
 bazel build //packages/chapter_07:chroot_toolchain_phase
 bazel build //packages/chapter_08:ch8_all
+bazel build //packages/chapter_09
+bazel build //packages/chapter_10
+bazel build //packages/chapter_11
+
+# Create bootable disk image
+bazel build //packages/chapter_11:create_disk_image
 
 # Test the cross-toolchain
 bazel run //packages/hello_world:hello_cross

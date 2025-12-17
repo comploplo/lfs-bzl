@@ -77,6 +77,9 @@ bazel build //packages/chapter_10
 # 8️⃣ Finalize System (Chapter 11) - creates release files
 bazel build //packages/chapter_11
 
+# 9️⃣ Create bootable disk image (optional)
+bazel build //packages/chapter_11:create_disk_image
+
 # 🧪 Validate each toolchain stage:
 bazel build //packages/hello_world:hello_cross  # Cross Toolchain (Ch 5) ✅
 bazel build //packages/hello_world:hello_chroot # Chroot Tools (Ch 7) ✅
@@ -182,6 +185,7 @@ This project uses a unique hybrid approach across different LFS chapters:
 - Fast: container stays alive across builds, amortizing startup cost
 - Isolated: `--network=none` enforces offline builds
 - Mounts virtual filesystems (`/dev`, `/proc`, `/sys`, `/run`) inside container
+- **Single worker instance** to avoid race conditions (configured in `.bazelrc`)
 
 **The Result:** Modern container-based workflow with zero sudo requirements for the entire build process.
 
@@ -198,6 +202,25 @@ Current implementation status:
 - ✅ **Chapter 11:** Release files (lfs-release, os-release, lsb-release)
 
 **🎉 LFS 12.2 BUILD COMPLETE!** The sysroot contains a bootable Linux system.
+
+### 🚀 Booting Your LFS System
+
+Create a bootable disk image and test with QEMU:
+
+```bash
+# Build the disk image (uses existing Podman worker - no extra setup needed)
+bazel build //packages/chapter_11:create_disk_image
+
+# Boot with QEMU (install qemu-system-x86 first)
+qemu-system-x86_64 \
+  -m 2G -enable-kvm \
+  -kernel sysroot/boot/vmlinuz-6.10.5-lfs-12.2 \
+  -append "root=/dev/sda rw console=ttyS0 init=/sbin/init" \
+  -drive file=sysroot/lfs.img,format=raw \
+  -nographic
+
+# Exit QEMU: Ctrl-a x
+```
 
 **Design Decisions:**
 
@@ -246,7 +269,7 @@ cd src
 # 1️⃣ Remove the entire sysroot directory
 rm -rf sysroot/
 
-# 2️⃣ Clean Bazel's cache (optional, for a truly clean build)
+# 2️⃣ Clean Bazel's cache
 bazel clean --expunge
 
 # 3️⃣ Rebuild the complete bootstrap (Chapter 5 → 6 → 7)
@@ -260,9 +283,12 @@ bazel build //packages/chapter_06:all_temp_tools
 bazel build //packages/chapter_07:chroot_toolchain_phase
 ```
 
-**Expected total rebuild time:** ~1-2 hours depending on hardware (parallel builds used automatically)
+**Expected total rebuild time:** ~1-2 hours depending on hardware
 
-**Note**: No sudo required! The Podman worker handles all containerization internally.
+**Important Notes:**
+
+- No sudo required! The Podman worker handles all containerization internally.
+- **Always clean both sysroot AND Bazel cache together.** The sysroot and Bazel cache must stay in sync. If you clean one without the other, install scripts may fail when encountering existing files.
 
 ### Restarting from a Specific Chapter
 

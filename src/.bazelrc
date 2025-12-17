@@ -8,6 +8,8 @@ common --announce_rc
 build --repository_cache=~/.cache/bazel/_bazel_repo_cache
 
 # Worker strategy for chroot builds (rootless Podman)
+# NOTE: Single worker instance required because all workers share the same
+# sysroot - parallel builds cause race conditions and file conflicts.
 build --strategy=LfsChrootBuild=worker
-build --worker_max_instances=LfsChrootBuild=8
+build --worker_max_instances=LfsChrootBuild=1
 build --worker_sandboxing=false

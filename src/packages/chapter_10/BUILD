@@ -84,12 +84,12 @@ lfs_package(
     install_cmd = """
         make modules_install
 
-        # Install kernel image
-        cp -iv arch/x86/boot/bzImage /boot/vmlinuz-6.10.5-lfs-12.2
+        # Install kernel image (use -f to overwrite without prompting)
+        cp -fv arch/x86/boot/bzImage /boot/vmlinuz-6.10.5-lfs-12.2
 
         # Install symbol map and config
-        cp -iv System.map /boot/System.map-6.10.5
-        cp -iv .config /boot/config-6.10.5
+        cp -fv System.map /boot/System.map-6.10.5
+        cp -fv .config /boot/config-6.10.5
 
         # Install documentation
         install -d /usr/share/doc/linux-6.10.5

@@ -4,6 +4,7 @@ bazel-*
 
 # Build sysroot and logs (generated)
 src/sysroot/
+src/lfs.img
 
 # Planning artifacts (local only)
 .planning/

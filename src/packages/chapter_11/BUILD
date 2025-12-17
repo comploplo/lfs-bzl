@@ -47,3 +47,59 @@ filegroup(
     name = "chapter_11",
     srcs = [":lfs_release_files"],
 )
+
+# --------------------------------------------------------------------------- #
+# Bootable Disk Image Creation
+# --------------------------------------------------------------------------- #
+
+# Create disk image inside the LFS chroot using e2fsprogs
+# Output: sysroot/lfs.img
+lfs_script(
+    name = "create_disk_image",
+    script = """
+        set -e
+        echo "=============================================="
+        echo "LFS Disk Image Creator"
+        echo "=============================================="
+
+        # Create 4GB sparse image file
+        echo "Creating 4GB disk image at /lfs.img..."
+        truncate -s 4G /lfs.img
+
+        # Use mke2fs -d to create and populate in one step (no mount needed)
+        echo "Creating ext4 filesystem and copying contents..."
+        mke2fs -t ext4 -d / -L lfs-root /lfs.img \
+            -E root_owner=0:0 \
+            -N 0 \
+            2>&1 | grep -v "^Copying files"
+
+        echo ""
+        echo "=============================================="
+        echo "Success! Disk image created at sysroot/lfs.img"
+        ls -lh /lfs.img
+        echo ""
+        echo "Boot with QEMU:"
+        echo "  qemu-system-x86_64 \\\\"
+        echo "    -m 2G -enable-kvm \\\\"
+        echo "    -kernel sysroot/boot/vmlinuz-6.10.5-lfs-12.2 \\\\"
+        echo "    -append 'root=/dev/sda rw console=ttyS0 init=/sbin/init' \\\\"
+        echo "    -drive file=sysroot/lfs.img,format=raw \\\\"
+        echo "    -nographic"
+        echo ""
+        echo "Exit QEMU with: Ctrl-a x"
+        echo "=============================================="
+    """,
+    deps = [
+        ":chapter_11",
+        "//packages/chapter_08:e2fsprogs",
+    ],
+)
+
+# Build everything including disk image
+filegroup(
+    name = "bootable",
+    srcs = [
+        ":chapter_11",
+        ":create_disk_image",
+    ],
+)
