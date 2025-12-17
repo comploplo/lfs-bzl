@@ -316,7 +316,10 @@ http_file(
     name = "gdbm_src",
     downloaded_file_path = "gdbm-1.24.tar.gz",
     sha256 = "695e9827fdf763513f133910bc7e6cfdb9187943a4fec943e57449723d2b8dbf",
-    urls = ["https://ftp.gnu.org/gnu/gdbm/gdbm-1.24.tar.gz"],
+    urls = [
+        "https://ftpmirror.gnu.org/gdbm/gdbm-1.24.tar.gz",
+        "https://ftp.gnu.org/gnu/gdbm/gdbm-1.24.tar.gz",
+    ],
 )
 
 http_file(

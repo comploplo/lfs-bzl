@@ -184,3 +184,14 @@ lfs_toolchain(
         ":linux_headers",
     ],
 )
+
+filegroup(
+    name = "chapter_05",
+    srcs = [
+        ":binutils_pass1",
+        ":gcc_pass1",
+        ":glibc",
+        ":libstdcpp",
+        ":linux_headers",
+    ],
+)

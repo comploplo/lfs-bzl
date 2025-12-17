@@ -142,13 +142,13 @@ See [docs/troubleshooting.md](troubleshooting.md) for full details on expected t
 | systemd configuration | ✅ Done | /etc/adjtime, /etc/vconsole.conf          |
 | /etc files            | ✅ Done | /etc/hosts, /etc/fstab, /etc/shells, etc. |
 
-## Phase 9: Making Bootable (Chapter 10) ⏳ PLANNED
+## Phase 9: Making Bootable (Chapter 10) 🚧 IN PROGRESS
 
-| Task            | Status      | Notes |
-| --------------- | ----------- | ----- |
-| /etc/fstab      | Not Started |       |
-| Linux kernel    | Not Started |       |
-| GRUB bootloader | Not Started |       |
+| Task            | Status     | Notes                  |
+| --------------- | ---------- | ---------------------- |
+| /etc/fstab      | ✅ Done    | Created in Chapter 9   |
+| Linux kernel    | 🚧 In Prog | Compiling 6.10.5       |
+| GRUB bootloader | 🚧 In Prog | Creating configuration |
 
 ## Phase 10: Finalization (Chapter 11) ⏳ PLANNED
 

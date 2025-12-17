@@ -456,7 +456,7 @@ lfs_toolchain(
 
 # Build all temporary tools
 filegroup(
-    name = "all_temp_tools",
+    name = "chapter_06",
     srcs = [
         ":bash",
         ":binutils_pass2",

@@ -55,19 +55,22 @@ cd src
 bazel test //packages/chapter_02:version_check_test
 
 # 2️⃣ Build the cross-toolchain (Chapter 5)
-bazel build //packages/chapter_05:cross_toolchain
+bazel build //packages/chapter_05
 
 # 3️⃣ Build all temporary tools (Chapter 6)
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 
 # 4️⃣ Build Chapter 7 chroot base system (rootless Podman worker - no sudo!)
-bazel build //packages/chapter_07:chroot_toolchain_phase
+bazel build //packages/chapter_07
 
 # 5️⃣ Build Chapter 8 final system (79 packages - rootless Podman worker)
-bazel build //packages/chapter_08:ch8_all
+bazel build //packages/chapter_08
 
 # 6️⃣ Configure System (Chapter 9)
-bazel build //packages/chapter_09:chapter_09
+bazel build //packages/chapter_09
+
+# 7️⃣ Make System Bootable (Chapter 10)
+bazel build //packages/chapter_10
 
 # 🧪 Validate each toolchain stage:
 bazel build //packages/hello_world:hello_cross  # Cross Toolchain (Ch 5) ✅

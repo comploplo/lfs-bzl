@@ -302,7 +302,7 @@ lfs_package(
 
 # Convenience aggregate to build all Chapter 7 packages
 filegroup(
-    name = "chroot_toolchain_phase",
+    name = "chapter_07",
     srcs = [
         ":bison",
         ":gettext",
@@ -326,15 +326,7 @@ lfs_script(
         # Note: Skipping /usr/share/{info,man,doc} cleanup due to
         # permission issues with some man pages even when running as root
     """,
-    deps = [":chroot_toolchain_phase"],
-)
-
-# Final convenience target for "Chapter 7 is done"
-filegroup(
-    name = "chroot_finalize",
-    srcs = [
-        ":chroot_cleanup",
-    ],
+    deps = [":chapter_07"],
 )
 
 # Quick validation of core Chapter 7 toolchain inside chroot
@@ -348,5 +340,5 @@ lfs_script(
         info --version | head -1
         lsblk --version | head -1
     """,
-    deps = [":chroot_toolchain_phase"],
+    deps = [":chapter_07"],
 )

@@ -9,5 +9,5 @@ build --repository_cache=~/.cache/bazel/_bazel_repo_cache
 
 # Worker strategy for chroot builds (rootless Podman)
 build --strategy=LfsChrootBuild=worker
-build --worker_max_instances=LfsChrootBuild=2
+build --worker_max_instances=LfsChrootBuild=8
 build --worker_sandboxing=false

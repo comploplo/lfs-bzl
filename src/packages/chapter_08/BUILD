@@ -1117,6 +1117,7 @@ lfs_package(
     phase = "chroot",
     deps = [
         ":openssl",
+        ":pkgconf",
         ":xz",
         ":zstd",
     ],
@@ -1853,7 +1854,7 @@ lfs_package(
 ###############################################################################
 
 filegroup(
-    name = "ch8_all",
+    name = "chapter_08",
     srcs = [
         # Phase 2: Core Foundation (17 packages)
         ":man_pages",
