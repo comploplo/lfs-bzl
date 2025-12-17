@@ -24,8 +24,10 @@ lfs-bzl/
 │   │   ├── chapter_05/     # Cross-toolchain (5 packages)
 │   │   ├── chapter_06/     # Temporary tools (17 packages)
 │   │   ├── chapter_07/     # Chroot preparation (6 packages)
-│   │   ├── chapter_08/     # Final system (79 packages) 🎉
-│   │   ├── chapter_09/     # System configuration (6 packages)
+│   │   ├── chapter_08/     # Final system (79 packages)
+│   │   ├── chapter_09/     # System configuration
+│   │   ├── chapter_10/     # Linux kernel + GRUB config
+│   │   ├── chapter_11/     # Release files (The End) 🎉
 │   │   └── hello_world/    # Toolchain validation tests
 │   ├── tools/              # Custom Bazel rules (lfs_build.bzl, etc.)
 │   ├── sysroot/            # 🎯 Build artifacts (your LFS system!)
@@ -69,8 +71,11 @@ bazel build //packages/chapter_08
 # 6️⃣ Configure System (Chapter 9)
 bazel build //packages/chapter_09
 
-# 7️⃣ Make System Bootable (Chapter 10)
+# 7️⃣ Make System Bootable (Chapter 10) - builds Linux kernel
 bazel build //packages/chapter_10
+
+# 8️⃣ Finalize System (Chapter 11) - creates release files
+bazel build //packages/chapter_11
 
 # 🧪 Validate each toolchain stage:
 bazel build //packages/hello_world:hello_cross  # Cross Toolchain (Ch 5) ✅
@@ -189,7 +194,10 @@ Current implementation status:
 - ✅ **Chapter 7:** Chroot base system (6 packages) - Rootless Podman worker
 - ✅ **Chapter 8:** Final system (79 packages) - Rootless Podman worker
 - ✅ **Chapter 9:** System Configuration (Systemd, Network, Shells)
-- ⏳ **Chapter 10-11:** Kernel, bootloader (planned)
+- ✅ **Chapter 10:** Linux Kernel + GRUB bootloader config
+- ✅ **Chapter 11:** Release files (lfs-release, os-release, lsb-release)
+
+**🎉 LFS 12.2 BUILD COMPLETE!** The sysroot contains a bootable Linux system.
 
 **Design Decisions:**
 
