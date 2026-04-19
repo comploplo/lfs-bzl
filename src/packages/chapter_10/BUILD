@@ -32,7 +32,7 @@ EOF
         # Ensure /boot exists
         mkdir -pv /boot
     """,
-    deps = ["//packages/chapter_08:toolchain"],
+    deps = ["//packages/chapter_09"],  # Ensure chapter 9 is complete first
 )
 
 # --------------------------------------------------------------------------- #

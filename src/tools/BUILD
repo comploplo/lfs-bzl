@@ -3,10 +3,10 @@
 
 # Export the build rules for use by other packages
 exports_files([
-    "lfs_chroot.bzl",
+    "lfs_defaults.bzl",
     "lfs_macros.bzl",
     "lfs_package.bzl",
+    "lfs_script.bzl",
     "lfs_toolchain.bzl",
     "providers.bzl",
-    "lfs_defaults.bzl",
 ])

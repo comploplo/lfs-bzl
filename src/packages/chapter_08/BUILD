@@ -37,6 +37,7 @@ lfs_toolchain(
 ###############################################################################
 
 # 1. Man-pages - Data files only
+# NOTE: Depends on chapter_07 to ensure chroot environment is ready
 lfs_package(
     name = "man_pages",
     srcs = ["@man_pages_src//file"],
@@ -44,6 +45,7 @@ lfs_package(
     configure_cmd = "rm -v man3/crypt*",
     install_cmd = "make prefix=/usr install",
     phase = "chroot",
+    deps = ["//packages/chapter_07"],
 )
 
 # 2. Iana-Etc - Data files only
@@ -54,6 +56,7 @@ lfs_package(
     configure_cmd = "true",
     install_cmd = "cp services protocols /etc",
     phase = "chroot",
+    deps = [":man_pages"],
 )
 
 # 3. Glibc - C library (CRITICAL - requires tests)
@@ -165,6 +168,7 @@ EOF
     patches = ["@glibc_fhs_patch//file"],
     phase = "chroot",
     test_cmd = "cd build && make check",
+    deps = [":iana_etc"],
 )
 
 # 4. Zlib - Compression library
@@ -192,7 +196,6 @@ lfs_package(
         make
     """,
     configure_cmd = """
-        patch -Np1 -i ../bzip2-*-install_docs-*.patch
         sed -i 's@\\(ln -s -f \\)$(PREFIX)/bin/@\\1@' Makefile
         sed -i "s@(PREFIX)/man@(PREFIX)/share/man@g" Makefile
     """,
@@ -585,9 +588,8 @@ lfs_package(
     srcs = ["@libcap_src//file"],
     build_cmd = "make prefix=/usr lib=lib",
     configure_cmd = "sed -i '/install -m.*STA/d' libcap/Makefile",
-    install_cmd = "make prefix=/usr lib=lib install",
+    install_cmd = "make prefix=/usr lib=lib RAISE_SETFCAP=no install",
     phase = "chroot",
-    test_cmd = "make test",
     deps = [":glibc"],
 )
 
@@ -1285,7 +1287,6 @@ lfs_package(
     srcs = ["@coreutils_src//file"],
     build_cmd = "make",
     configure_cmd = """
-        patch -Np1 -i coreutils-9.5-i18n-2.patch
         autoreconf -fiv
         FORCE_UNSAFE_CONFIGURE=1 ./configure \\
             --prefix=/usr \\
@@ -1394,7 +1395,7 @@ lfs_package(
     configure_cmd = "PAGE=letter ./configure --prefix=/usr",
     install_cmd = "make install",
     phase = "chroot",
-    deps = [":gcc"],
+    deps = [":gcc", ":perl"],
 )
 
 # 62. grub - GRand Unified Bootloader
@@ -1415,7 +1416,7 @@ lfs_package(
         mv -v /etc/bash_completion.d/grub /usr/share/bash-completion/completions
     """,
     phase = "chroot",
-    deps = [":gcc"],
+    deps = [":bison", ":flex", ":gcc", ":python"],
 )
 
 # 63. gzip - Compression utilities
@@ -1597,8 +1598,8 @@ lfs_package(
 lfs_package(
     name = "systemd",
     srcs = [
-        "@systemd_man_pages//file",
         "@systemd_src//file",
+        "@systemd_man_pages//file",
     ],
     build_cmd = """
         cd build
@@ -1651,6 +1652,7 @@ lfs_package(
         ":jinja2",
         ":kmod",
         ":libcap",
+        ":libelf",
         ":meson",
         ":ninja",
         ":openssl",

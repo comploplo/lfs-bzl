@@ -11,7 +11,6 @@ Public API:
 Related modules:
 - providers.bzl: Defines LfsToolchainInfo provider
 - lfs_package.bzl: Consumes toolchains in package builds
-- lfs_chroot.bzl: Uses toolchains in chroot operations
 """
 
 load("//tools:providers.bzl", "LfsToolchainInfo")
@@ -48,10 +47,10 @@ def _lfs_toolchain_impl(ctx):
     """
     marker = ctx.actions.declare_file(ctx.label.name + ".toolchain_ready")
 
-    dep_files = depset(transitive = [d.files for d in ctx.attr.deps]).to_list()
-    if dep_files:
+    dep_depset = depset(transitive = [d.files for d in ctx.attr.deps])
+    if ctx.attr.deps:
         ctx.actions.run_shell(
-            inputs = dep_files,
+            inputs = dep_depset,
             outputs = [marker],
             command = "printf '%s\\n' 'ready' > '{}'".format(marker.path),
             mnemonic = "LfsToolchainReady",

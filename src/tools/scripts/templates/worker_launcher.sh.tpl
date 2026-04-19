@@ -92,7 +92,12 @@ podman run \
   --name "$CONTAINER_NAME" \
   --rm \
   --interactive \
-  --privileged \
+  --cap-add SYS_ADMIN \
+  --cap-add SYS_CHROOT \
+  --cap-add CHOWN \
+  --cap-add DAC_OVERRIDE \
+  --cap-add FOWNER \
+  --cap-add MKNOD \
   --network=none \
   --security-opt label=disable \
   --stop-timeout 30 \

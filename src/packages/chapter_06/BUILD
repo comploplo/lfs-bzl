@@ -121,17 +121,18 @@ lfs_configure_make(
 )
 
 # Sed - Stream editor
-lfs_configure_make(
+lfs_package(
     name = "sed",
     srcs = ["@sed_src//file"],
-    configure_flags = [
-        "--host=$LFS_TGT",
-        "--build=$(./build-aux/config.guess)",
-    ],
+    configure_cmd = """
+        mkdir -p build && cd build && ../configure --prefix=/usr \\
+            --host=$LFS_TGT \\
+            --build=$(../build-aux/config.guess)
+    """,
+    build_cmd = "make -C build -j$(nproc)",
+    install_cmd = "make -C build DESTDIR=$LFS install",
     phase = "ch6",
-    prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
-    destdir = "$LFS",
 )
 
 ###############################################################################
@@ -196,6 +197,7 @@ lfs_configure_make(
         "--host=$LFS_TGT",
         "--build=$(build-aux/config.guess)",
     ],
+    env = {"FORCE_UNSAFE_CONFIGURE": "1"},
     phase = "ch6",
     prefix = "/usr",
     toolchain = "//packages/chapter_05:cross_toolchain",
@@ -239,10 +241,10 @@ lfs_package(
     srcs = ["@file_src//file"],
     build_cmd = "make FILE_COMPILE=$(pwd)/build/src/file",
     configure_cmd = """
-        # Phase 1: Build host version for FILE_COMPILE
+        # Phase 1: Build host version for FILE_COMPILE (use container's native gcc)
         mkdir build
         pushd build
-          ../configure --disable-bzlib \\
+          CC=gcc ../configure --disable-bzlib \\
               --disable-libseccomp \\
               --disable-xzlib \\
               --disable-zlib
@@ -446,7 +448,7 @@ lfs_toolchain(
         "LD_LIBRARY_PATH": "$LFS/usr/lib",
     },
     deps = [
-        ":all_temp_tools",
+        ":gcc_pass2",  # Last package in chapter 6
     ],
 )
 

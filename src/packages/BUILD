@@ -17,7 +17,7 @@ filegroup(
 # Uses rootless Podman worker (no sudo required).
 filegroup(
     name = "bootstrap_ch7",
-    srcs = ["//packages/chapter_07:chroot_finalize"],
+    srcs = ["//packages/chapter_07:chroot_cleanup"],
     visibility = ["//visibility:public"],
 )
 

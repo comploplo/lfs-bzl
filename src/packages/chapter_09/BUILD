@@ -22,7 +22,7 @@ lfs_script(
 LANG=en_US.UTF-8
 EOF
     """,
-    deps = ["//packages/chapter_08:toolchain"],
+    deps = ["//packages/chapter_08"],  # Ensure all of chapter 8 is built first
 )
 
 lfs_script(
@@ -209,8 +209,7 @@ lfs_script(
 # file system  mount-point  type     options             dump  fsck
 #                                                              order
 
-/dev/sda1      /            ext4     defaults            1     1
-/dev/sda2      swap         swap     pri=1               0     0
+/dev/sda       /            ext4     defaults            1     1
 proc           /proc        proc     nosuid,noexec,nodev 0     0
 sysfs          /sys         sysfs    nosuid,noexec,nodev 0     0
 devpts         /dev/pts     devpts   gid=5,mode=620      0     0

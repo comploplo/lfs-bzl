@@ -1,3 +1,5 @@
+--mode
+{mode}
 --script
 {script_path}
 --done

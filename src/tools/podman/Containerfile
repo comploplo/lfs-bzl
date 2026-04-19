@@ -16,7 +16,7 @@ RUN mkdir -p /lfs /work /cache
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Copy worker.py into the container
-COPY scripts/worker.py /work/worker.py
+COPY worker.py /work/worker.py
 
 WORKDIR /work
 CMD ["python3", "/work/worker.py"]

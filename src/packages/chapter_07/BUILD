@@ -56,7 +56,7 @@ lfs_script(
         install -dv -m 0750 /root
         install -dv -m 1777 /tmp /var/tmp
     """,
-    deps = ["//packages/chapter_06:all_temp_tools"],
+    deps = ["//packages/chapter_06"],
 )
 
 # Seed essential files (/etc/passwd, /etc/group, etc.)
@@ -140,7 +140,7 @@ EOF
     """,
     deps = [
         ":chroot_create_dirs",
-        "//packages/chapter_06:all_temp_tools",
+        "//packages/chapter_06",
     ],
 )
 
@@ -152,7 +152,7 @@ lfs_script(
     """,
     deps = [
         ":chroot_seed_files",
-        "//packages/chapter_06:all_temp_tools",
+        "//packages/chapter_06",
     ],
 )
 
@@ -177,7 +177,7 @@ lfs_toolchain(
     },
     visibility = ["//visibility:public"],
     deps = [
-        ":chroot_toolchain_phase",
+        ":util_linux",  # Last package in chapter 7
     ],
 )
 
@@ -265,7 +265,8 @@ lfs_package(
     phase = "chroot",
     deps = [
         ":chroot_prepare",
-        ":gettext",  # Wait for gettext i18n tools
+        ":gettext",
+        ":perl",
     ],
 )
 

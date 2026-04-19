@@ -33,7 +33,7 @@ lfs_package(
     srcs = ["@linux_headers_src//file"],
     build_cmd = "make mrproper && make headers",
     configure_cmd = "true",
-    install_cmd = "find usr/include -name '.*' -delete && cp -rv usr/include $LFS/usr",
+    install_cmd = "find usr/include -name '.*' -delete && mkdir -p $LFS/usr && cp -rv usr/include $LFS/usr",
     phase = "ch5",
 )
 
@@ -133,6 +133,39 @@ lfs_package(
             ln -sf usr/lib/ld-linux.so.2 $LFS/lib/ld-linux.so.2
           ;;
         esac
+        # Regenerate gcc's fixed headers now that glibc is installed.
+        # mkheaders has hardcoded paths from --prefix=/tools, so symlink.
+        ln -sfn $LFS/tools /tools
+        $LFS/tools/libexec/gcc/$LFS_TGT/14.2.0/install-tools/mkheaders
+        # gcc_pass1 was built with --without-headers, so its limits.h is
+        # just glimits.h (bare definitions, MB_LEN_MAX=1, no PATH_MAX).
+        # A proper limits.h chains to system headers via syslimits.h.
+        # Wrap both copies with the limitx.h preamble and limity.h footer
+        # so the cross-compiler picks up glibc's limits (PATH_MAX, etc.).
+        _gcc_dir=$LFS/tools/lib/gcc/$LFS_TGT/14.2.0
+        for d in include include-fixed; do
+          _f="$_gcc_dir/$d/limits.h"
+          [ -f "$_f" ] || continue
+          mv "$_f" "$_f.bare"
+          {
+            cat <<'LIMITX'
+#ifndef _GCC_LIMITS_H_
+#define _GCC_LIMITS_H_
+#ifndef _LIBC_LIMITS_H_
+#include "syslimits.h"
+#endif
+LIMITX
+            cat "$_f.bare"
+            cat <<'LIMITY'
+#else /* not _GCC_LIMITS_H_ */
+#ifdef _GCC_NEXT_LIMITS_H
+#include_next <limits.h>
+#endif
+#endif /* not _GCC_LIMITS_H_ */
+LIMITY
+          } > "$_f"
+          rm "$_f.bare"
+        done
     """,
     phase = "ch5",
     deps = [

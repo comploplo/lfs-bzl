@@ -62,16 +62,18 @@ lfs_script(
         echo "LFS Disk Image Creator"
         echo "=============================================="
 
-        # Create 4GB sparse image file
-        echo "Creating 4GB disk image at /lfs.img..."
-        truncate -s 4G /lfs.img
+        # Create 4GB sparse image file in /tmp (tmpfs, excluded from mke2fs -d /)
+        echo "Creating 4GB disk image..."
+        truncate -s 4G /tmp/lfs.img
 
         # Use mke2fs -d to create and populate in one step (no mount needed)
         echo "Creating ext4 filesystem and copying contents..."
-        mke2fs -t ext4 -d / -L lfs-root /lfs.img \
+        mke2fs -t ext4 -d / -L lfs-root /tmp/lfs.img \
             -E root_owner=0:0 \
             -N 0 \
             2>&1 | grep -v "^Copying files"
+
+        mv /tmp/lfs.img /lfs.img
 
         echo ""
         echo "=============================================="
