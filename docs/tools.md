@@ -11,10 +11,9 @@ This directory implements the "bridge" between Bazel's dependency management and
 - [Providers](#1-providers-providersbzl)
 - [Build Rules](#2-build-rules-lfs_buildbzl)
   - [lfs_package](#lfs_package-rule)
-  - [lfs_autotools_package](#lfs_autotools_package-macro)
   - [lfs_c_binary](#lfs_c_binary-macro)
   - [lfs_configure_make](#lfs_configure_make-macro)
-  - [lfs_autotools / lfs_plain_make](#lfs_autotools--lfs_plain_make-macros)
+  - [lfs_autotools](#lfs_autotools-macro)
   - [lfs_script](#lfs_script-macro)
 - [Chroot Builds (Podman Worker)](#chroot-builds-podman-worker)
 - [Environment Variables](#environment-variables-reference)
@@ -25,18 +24,17 @@ ______________________________________________________________________
 
 ## 📁 Files Overview
 
-| File / Dir           | Purpose                                                                          |
+| File / Dir | Purpose |
 | -------------------- | -------------------------------------------------------------------------------- |
-| `BUILD`              | Package marker and exported `.bzl` entrypoints                                   |
-| `providers.bzl`      | `LfsToolchainInfo` provider                                                      |
-| `lfs_build.bzl`      | Backward-compatible re-export module (loads and re-exports everything)           |
-| `lfs_package.bzl`    | Core `lfs_package` rule (supports both host builds and Podman worker for chroot) |
-| `lfs_toolchain.bzl`  | `lfs_toolchain` rule + default toolchain selection                               |
-| `lfs_macros.bzl`     | Convenience macros (`lfs_autotools`, `lfs_c_binary`, etc.)                       |
-| `lfs_defaults.bzl`   | Phase presets for configure/make/install defaults                                |
-| `scripts/`           | Shell helpers and utility scripts                                                |
-| `scripts/templates/` | All template scripts expanded by Starlark rules (build, runner, worker)          |
-| `podman/`            | Rootless Podman worker for Chapter 7+ chroot builds (no sudo required)           |
+| `BUILD` | Package marker and exported `.bzl` entrypoints |
+| `providers.bzl` | `LfsToolchainInfo` provider |
+| `lfs_package.bzl` | Core `lfs_package` rule (Podman container and chroot modes) |
+| `lfs_toolchain.bzl` | `lfs_toolchain` rule + default toolchain selection |
+| `lfs_macros.bzl` | Convenience macros (`lfs_autotools`, `lfs_c_binary`, etc.) |
+| `lfs_defaults.bzl` | Phase presets for configure/make/install defaults |
+| `scripts/` | Shell helpers and utility scripts |
+| `scripts/templates/` | All template scripts expanded by Starlark rules (build, runner, worker) |
+| `podman/` | Rootless Podman worker used by every build phase (no sudo required) |
 
 ______________________________________________________________________
 
@@ -44,7 +42,7 @@ ______________________________________________________________________
 
 These rules implement our hybrid approach:
 
-- **Bazel's Role:** Dependency tracking, caching, parallelization
+- **Bazel's Role:** Dependency tracking, caching, and scheduling
 - **Rule's Role:** Set up LFS environment, execute traditional build commands
 
 **Key Principle:** We don't force LFS into "pure" Bazel semantics. Instead, we use Bazel as a workflow orchestrator that respects LFS's traditional build patterns.
@@ -72,13 +70,13 @@ Custom provider that carries toolchain configuration between build targets.
 
 ```python
 # Define a toolchain after building GCC Pass 1
+# ($LFS_TGT is $(uname -m)-lfs-linux-gnu, e.g. aarch64-lfs-linux-gnu)
 lfs_toolchain(
     name = "cross_toolchain",
     bin_path = "$LFS/tools/bin",
     env = {
-        "CC": "x86_64-lfs-linux-gnu-gcc",
-        "CXX": "x86_64-lfs-linux-gnu-g++",
-        "LFS_TGT": "x86_64-lfs-linux-gnu",
+        "CC": "$LFS_TGT-gcc",
+        "CXX": "$LFS_TGT-g++",
     },
 )
 
@@ -93,29 +91,21 @@ lfs_package(
 )
 ```
 
-`lfs_toolchain` is defined in `lfs_toolchain.bzl` and re-exported from
-`lfs_build.bzl` for backward compatibility.
+`lfs_toolchain` is defined in `lfs_toolchain.bzl`.
 
 ______________________________________________________________________
 
 <a id="2-build-rules-lfs_buildbzl"></a>
 
-## 2. 🏗️ Build Rules (`lfs_build.bzl` and `lfs_*.bzl`)
+## 2. 🏗️ Build Rules (`lfs_*.bzl`)
 
-`lfs_build.bzl` is the compatibility entrypoint: it re-exports rules/macros from
-the modular implementation so existing BUILD files can keep using:
-
-```python
-load("//tools:lfs_build.bzl", "lfs_package", "lfs_autotools", "lfs_toolchain")
-```
-
-For more explicit imports, load from the specific module:
+Load each rule or macro directly from the module that defines it:
 
 ```python
 load("//tools:lfs_package.bzl", "lfs_package")
-load("//tools:lfs_macros.bzl", "lfs_autotools")
+load("//tools:lfs_macros.bzl", "lfs_autotools", "lfs_configure_make", "lfs_c_binary")
 load("//tools:lfs_toolchain.bzl", "lfs_toolchain")
-load("//tools:lfs_chroot.bzl", "lfs_chroot_command")
+load("//tools:lfs_script.bzl", "lfs_script")
 ```
 
 ### `lfs_package` (Rule)
@@ -124,23 +114,23 @@ The core rule that handles standard LFS package builds.
 
 #### Attributes
 
-| Attribute            | Type        | Required | Default | Description                                                                                                                                         |
+| Attribute | Type | Required | Default | Description |
 | -------------------- | ----------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`               | string      | Yes      | -       | Target name                                                                                                                                         |
-| `srcs`               | label_list  | No       | `[]`    | Source files (tarballs or individual files)                                                                                                         |
-| `patches`            | label_list  | No       | `[]`    | Patch files applied with `patch -Np1`                                                                                                               |
-| `configure_cmd`      | string      | No       | `None`  | Configure command to run                                                                                                                            |
-| `configure_cmd_file` | label       | No       | `None`  | File containing configure commands (exclusive with `configure_cmd`)                                                                                 |
-| `build_cmd`          | string      | No       | `None`  | Build command (typically `make`)                                                                                                                    |
-| `build_cmd_file`     | label       | No       | `None`  | File containing build commands (exclusive with `build_cmd`)                                                                                         |
-| `install_cmd`        | string      | No       | `None`  | Install command (typically `make install`)                                                                                                          |
-| `install_cmd_file`   | label       | No       | `None`  | File containing install commands (exclusive with `install_cmd`)                                                                                     |
-| `phase`              | string      | No       | `None`  | Build phase: `"chroot"` triggers rootless Podman worker (Chapter 7+), otherwise builds on host                                                      |
-| `toolchain`          | label       | No       | `None`  | LfsToolchainInfo provider to inject                                                                                                                 |
-| `deps`               | label_list  | No       | `[]`    | Other `lfs_package` targets that must finish first                                                                                                  |
-| `env`                | string_dict | No       | `{}`    | Extra environment variables to export                                                                                                               |
-| `binary_name`        | string      | No       | -       | Binary name in `$LFS/tools/bin/` for executable targets (set `create_runner = True` to emit a runner; defaults to label name when runner requested) |
-| `create_runner`      | bool        | No       | `False` | Emit a runner script (uses `binary_name` if set, else the target label)                                                                             |
+| `name` | string | Yes | - | Target name |
+| `srcs` | label_list | No | `[]` | Source files (tarballs or individual files) |
+| `patches` | label_list | No | `[]` | Patch files applied with `patch -Np1` |
+| `configure_cmd` | string | No | `None` | Configure command to run |
+| `configure_cmd_file` | label | No | `None` | File containing configure commands (exclusive with `configure_cmd`) |
+| `build_cmd` | string | No | `None` | Build command (typically `make`) |
+| `build_cmd_file` | label | No | `None` | File containing build commands (exclusive with `build_cmd`) |
+| `install_cmd` | string | No | `None` | Install command (typically `make install`) |
+| `install_cmd_file` | label | No | `None` | File containing install commands (exclusive with `install_cmd`) |
+| `phase` | string | No | `None` | Build phase: `"chroot"` uses worker chroot mode; other phases use worker container mode |
+| `toolchain` | label | No | `None` | LfsToolchainInfo provider to inject |
+| `deps` | label_list | No | `[]` | Other `lfs_package` targets that must finish first |
+| `env` | string_dict | No | `{}` | Extra environment variables to export |
+| `binary_name` | string | No | - | Binary name in `$LFS/tools/bin/` for executable targets (set `create_runner = True` to emit a runner; defaults to label name when runner requested) |
+| `create_runner` | bool | No | `False` | Emit a runner script (uses `binary_name` if set, else the target label) |
 
 #### Behavior
 
@@ -150,7 +140,7 @@ The core rule that handles standard LFS package builds.
 
    - Sets `$LFS` to `sysroot/`
    - Sets `$LC_ALL=POSIX`
-   - Sets `$LFS_TGT=x86_64-lfs-linux-gnu`
+   - Sets `$LFS_TGT=$(uname -m)-lfs-linux-gnu` (e.g. `aarch64-lfs-linux-gnu`)
    - Prepends `$LFS/tools/bin` to `$PATH`
    - Optionally injects custom toolchain environment
 
@@ -249,7 +239,7 @@ to emit a wrapper that allows:
 bazel run //packages/hello_world:hello
 ```
 
-**How It Works (Host Builds - Chapters 5-6):**
+**How It Works (Container-Mode Builds - Chapters 5-6):**
 
 1. Creates a bash wrapper script at `bazel-bin/packages/hello_world/hello`
 1. Script finds workspace root using `$BUILD_WORKSPACE_DIRECTORY` or walking up the directory tree
@@ -277,53 +267,6 @@ Successfully built hello_final
 
 **To enable:** Add `create_runner = True` (optionally set `binary_name` to override
 the script/binary name). Leave it unset for non-executable targets.
-
-______________________________________________________________________
-
-### `lfs_autotools_package` (Macro)
-
-Convenience macro for standard autotools packages (90% of LFS packages).
-
-#### Arguments
-
-| Argument          | Type           | Required | Default    | Description                                   |
-| ----------------- | -------------- | -------- | ---------- | --------------------------------------------- |
-| `name`            | string         | Yes      | -          | Target name                                   |
-| `srcs`            | label_list     | Yes      | -          | Source tarball                                |
-| `prefix`          | string         | No       | `"/tools"` | Install prefix                                |
-| `configure_flags` | list\[string\] | No       | `[]`       | Additional configure flags                    |
-| `make_flags`      | list\[string\] | No       | `[]`       | Additional make flags (default: `-j$(nproc)`) |
-| `**kwargs`        | -              | No       | -          | Additional args passed to `lfs_package`       |
-
-#### Example
-
-Instead of writing:
-
-```python
-lfs_package(
-    name = "m4",
-    srcs = ["@m4//file"],
-    configure_cmd = "./configure --prefix=/tools --host=$LFS_TGT",
-    build_cmd = "make -j$(nproc)",
-    install_cmd = "make install",
-)
-```
-
-You can write:
-
-```python
-lfs_autotools_package(
-    name = "m4",
-    srcs = ["@m4//file"],
-    configure_flags = ["--host=$LFS_TGT"],
-)
-```
-
-**Generated Commands:**
-
-- `configure_cmd`: `./configure --prefix=/tools --host=$LFS_TGT`
-- `build_cmd`: `make -j$(nproc)`
-- `install_cmd`: `make install`
 
 ______________________________________________________________________
 
@@ -367,14 +310,12 @@ Builds in `<build_subdir>` (default `build`) with parallel make and optional `DE
 
 ______________________________________________________________________
 
-### `lfs_autotools` / `lfs_plain_make` (Macros)
+### `lfs_autotools` (Macro)
 
-Declarative wrappers that use phase presets from `lfs_defaults.bzl` to avoid
+Declarative wrapper that uses phase presets from `lfs_defaults.bzl` to avoid
 long heredocs. Choose a phase (`"ch5"`, `"ch6"`, `"ch7"`) and provide only the
-deltas (configure flags, make targets, install targets).
-
-- `lfs_autotools`: generates configure/build/install commands with out-of-tree builds.
-- `lfs_plain_make`: for packages that only need make + install.
+deltas (configure flags, make targets, install targets); it generates
+configure/build/install commands with out-of-tree builds.
 
 Each phase preset sets sensible defaults: prefix, destdir, build subdir, and
 `-j$(nproc)` make flags.
@@ -382,7 +323,7 @@ Each phase preset sets sensible defaults: prefix, destdir, build subdir, and
 Example:
 
 ```python
-load("//tools:lfs_build.bzl", "lfs_autotools")
+load("//tools:lfs_macros.bzl", "lfs_autotools")
 
 lfs_autotools(
     name = "binutils_pass1",
@@ -463,7 +404,7 @@ lfs_package(
 - ✅ **No sudo required** - Entire build runs as regular user
 - ✅ **Network isolation** - Builds run with `--network=none`
 - ✅ **Persistent worker** - Container stays alive across builds for performance
-- ✅ **Parallel builds** - Multiple packages can build simultaneously
+- ✅ **Serialized mutation** - One worker instance protects the shared sysroot
 
 ### Requirements
 
@@ -472,45 +413,18 @@ lfs_package(
 
 ______________________________________________________________________
 
-## 🗑️ Deprecated: Sudo-Based Chroot Rules
-
-**DEPRECATED:** The following rules are legacy and should not be used for new code. Use `lfs_package` with `phase="chroot"` instead.
-
-<details>
-<summary>Click to expand deprecated chroot rules (for reference only)</summary>
-
-### `lfs_chroot_command` (Rule) - DEPRECATED
-
-**Use `lfs_package` with `phase="chroot"` instead.**
-
-Legacy sudo-based rule for running commands inside chroot. Replaced by rootless Podman worker.
-
-### `lfs_chroot_step` (Macro) - DEPRECATED
-
-**Use `lfs_package` with `phase="chroot"` instead.**
-
-Legacy wrapper around `lfs_chroot_command`. Requires sudo.
-
-### `lfs_chroot_extract_tarball` (Macro) - DEPRECATED
-
-**Not needed with `lfs_package`** - tarballs are extracted automatically.
-
-</details>
-
-______________________________________________________________________
-
 ## 🔐 Environment Variables Reference
 
 The rules automatically set these environment variables:
 
-| Variable    | Value                  | Purpose                                                 |
+| Variable | Value | Purpose |
 | ----------- | ---------------------- | ------------------------------------------------------- |
-| `$LFS`      | `sysroot/`             | Root of the LFS system being built (workspace-relative) |
-| `$LC_ALL`   | `POSIX`                | Consistent locale for builds                            |
-| `$LFS_TGT`  | `x86_64-lfs-linux-gnu` | Target triplet for cross-compilation                    |
-| `$PATH`     | `$LFS/tools/bin:$PATH` | Find LFS tools before host tools                        |
-| `$EXECROOT` | `$(pwd)`               | Bazel execution root (for finding inputs)               |
-| `$WORK_DIR` | `$(mktemp -d)`         | Temporary build directory                               |
+| `$LFS` | `sysroot/` | Root of the LFS system being built (workspace-relative) |
+| `$LC_ALL` | `POSIX` | Consistent locale for builds |
+| `$LFS_TGT` | `$(uname -m)-lfs-linux-gnu` | Target triplet for cross-compilation (e.g. `aarch64-lfs-linux-gnu`) |
+| `$PATH` | `$LFS/tools/bin:$PATH` | Find LFS tools before host tools |
+| `$EXECROOT` | `$(pwd)` | Bazel execution root (for finding inputs) |
+| `$WORK_DIR` | `$(mktemp -d)` | Temporary build directory |
 
 **Toolchain Variables (if `toolchain` attribute provided):**
 
@@ -557,12 +471,14 @@ Recommended structure for package BUILD files:
 
 ```python
 # Load the rules
-load("//tools:lfs_build.bzl", "lfs_package", "lfs_autotools_package", "lfs_c_binary")
+load("//tools:lfs_package.bzl", "lfs_package")
+load("//tools:lfs_macros.bzl", "lfs_autotools", "lfs_c_binary")
 
 # Simple autotools package
-lfs_autotools_package(
+lfs_autotools(
     name = "m4",
-    srcs = ["@m4//file"],
+    srcs = ["@m4_src//file"],
+    phase = "ch6",
     configure_flags = ["--host=$LFS_TGT"],
 )
 
@@ -579,8 +495,8 @@ lfs_toolchain(
     name = "cross_toolchain",
     bin_path = "$LFS/tools/bin",
     env = {
-        "CC": "x86_64-lfs-linux-gnu-gcc",
-        "CXX": "x86_64-lfs-linux-gnu-g++",
+        "CC": "$LFS_TGT-gcc",
+        "CXX": "$LFS_TGT-g++",
     },
 )
 
@@ -598,10 +514,10 @@ ______________________________________________________________________
 
 ### Current Limitations
 
-1. **No Sandbox for Host Builds:** Chapter 5-6 builds run outside Bazel's sandbox to write to `sysroot/`
+1. **Shared Mutable Sysroot:** All phases write outside Bazel's sandbox to `sysroot/`
 
-   - **Impact:** Less isolated, can't leverage remote execution for host builds
-   - **Mitigation:** Chapter 7+ uses isolated Podman containers; host builds use isolated temp directory
+   - **Impact:** Remote execution is unavailable, and marker files must remain in sync with the sysroot
+   - **Mitigation:** All phases run in Podman, and `.bazelrc` limits builds to one worker instance
 
 1. **Binary Name Assumption:** Assumes binaries install to `$LFS/tools/bin/` or `$LFS/usr/bin/`
 
@@ -614,10 +530,10 @@ ______________________________________________________________________
 
 ### Recent Enhancements
 
-- [x] ✅ Rootless Podman worker for Chapter 7+ (no sudo required!)
+- [x] ✅ Rootless Podman worker for all phases (no sudo required!)
 - [x] ✅ Persistent JSON worker protocol (container stays alive across builds)
 - [x] ✅ Network isolation (`--network=none` for chroot builds)
-- [x] ✅ Parallel chroot builds supported
+- [x] ✅ Single-worker serialization for shared-sysroot safety
 
 ### Future Enhancements
 
@@ -633,10 +549,10 @@ Verify the rules work with the hello world test:
 
 ```bash
 # Build
-bazel build //packages/hello_world:hello
+bazel build //packages/hello_world:hello_cross
 
 # Run
-bazel run //packages/hello_world:hello
+bazel run //packages/hello_world:hello_cross
 
 # Check output
 ls -l sysroot/tools/bin/hello
@@ -659,20 +575,20 @@ ______________________________________________________________________
 Add `--subcommands` to see the actual shell commands:
 
 ```bash
-bazel build //packages/hello_world:hello --subcommands
+bazel build //packages/hello_world:hello_cross --subcommands
 ```
 
 ### Force Rebuild
 
 ```bash
 bazel clean
-bazel build //packages/hello_world:hello
+bazel build //packages/hello_world:hello_cross
 ```
 
 ### Check Marker Files
 
 ```bash
-ls -l bazel-bin/packages/hello_world/hello.done
+ls -l bazel-bin/packages/hello_world/hello_cross.done
 ```
 
 ______________________________________________________________________
@@ -681,5 +597,5 @@ ______________________________________________________________________
 
 - **[DESIGN.md](../DESIGN.md)** - Architecture and "Managed Chaos" philosophy
 - **[docs/status.md](status.md)** - Build progress tracker
-- **[LFS Book 12.2](https://www.linuxfromscratch.org/lfs/view/12.2/)** - Official build instructions
+- **[LFS Book 13.0-systemd](https://www.linuxfromscratch.org/lfs/view/13.0-systemd/)** - Official build instructions
 - **[Bazel Rules Tutorial](https://bazel.build/rules/rules-tutorial)** - Creating custom rules

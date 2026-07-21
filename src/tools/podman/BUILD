@@ -51,7 +51,7 @@ genrule(
 py_test(
     name = "worker_test",
     srcs = ["worker_test.py"],
-    tags = ["small"],
+    size = "small",
     deps = [":worker_lib"],
 )
 

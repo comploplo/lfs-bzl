@@ -25,6 +25,8 @@ def _worker_mode(phase):
     """
     if phase == "chroot":
         return "chroot"
+
+    # "image" == container-mode disk assembly (chapter 11); maps to container.
     return "container"
 
 def _run_worker_build(ctx, build_script, marker, inputs, mode):
@@ -64,21 +66,12 @@ def _lfs_package_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name) if runner_name else marker
 
     inputs = list(ctx.files.srcs) + list(ctx.files.patches)
-    cmd_inputs = []
 
     dep_depsets = [dep.files for dep in ctx.attr.deps]
 
     toolchain_depset = depset()
     if ctx.attr.toolchain:
         toolchain_depset = ctx.attr.toolchain[DefaultInfo].files
-
-    def _resolve_cmd(name, inline_value, file_value):
-        if inline_value and file_value:
-            fail("{}: specify either {} or {}_file, not both".format(ctx.label, name, name))
-        if file_value:
-            cmd_inputs.append(file_value)
-            return 'bash "$EXECROOT/{}"'.format(file_value.path)
-        return inline_value or ""
 
     src_list = " ".join(['"$EXECROOT/{}"'.format(f.path) for f in ctx.files.srcs])
     patch_list = " ".join(['"$EXECROOT/{}"'.format(f.path) for f in ctx.files.patches])
@@ -136,9 +129,9 @@ for PATCH in {patches} ; do
 done
 """.format(patches = patch_list)
 
-    configure_cmd = _resolve_cmd("configure_cmd", ctx.attr.configure_cmd, ctx.file.configure_cmd_file)
-    build_cmd = _resolve_cmd("build_cmd", ctx.attr.build_cmd, ctx.file.build_cmd_file)
-    install_cmd = _resolve_cmd("install_cmd", ctx.attr.install_cmd, ctx.file.install_cmd_file)
+    configure_cmd = ctx.attr.configure_cmd
+    build_cmd = ctx.attr.build_cmd
+    install_cmd = ctx.attr.install_cmd
 
     configure_block = ""
     if configure_cmd:
@@ -182,14 +175,13 @@ cd "$WORKDIR"
             "{configure_block}": configure_block,
             "{build_block}": build_block,
             "{install_block}": install_block,
-            "{marker_path}": marker.path,
         },
         is_executable = True,
     )
 
     transitive_depsets = dep_depsets + ([toolchain_depset] if ctx.attr.toolchain else [])
     all_inputs = depset(
-        direct = inputs + cmd_inputs,
+        direct = inputs,
         transitive = transitive_depsets,
     )
     _run_worker_build(ctx, build_script, marker, all_inputs, mode)
@@ -220,7 +212,7 @@ cd "$WORKDIR"
             )
 
         return [DefaultInfo(
-            files = depset([output]),
+            files = depset([output, marker]),
             executable = output,
             runfiles = ctx.runfiles(files = [marker] + (toolchain_depset.to_list() if ctx.attr.toolchain else [])),
         )]
@@ -253,22 +245,10 @@ _lfs_package_rule = rule(
         "configure_cmd": attr.string(
             mandatory = False,
         ),
-        "configure_cmd_file": attr.label(
-            allow_single_file = True,
-            mandatory = False,
-        ),
         "build_cmd": attr.string(
             mandatory = False,
         ),
-        "build_cmd_file": attr.label(
-            allow_single_file = True,
-            mandatory = False,
-        ),
         "install_cmd": attr.string(
-            mandatory = False,
-        ),
-        "install_cmd_file": attr.label(
-            allow_single_file = True,
             mandatory = False,
         ),
         "toolchain": attr.label(
@@ -284,7 +264,7 @@ _lfs_package_rule = rule(
         ),
         "phase": attr.string(
             mandatory = True,
-            values = ["ch5", "ch6", "chroot"],
+            values = ["ch5", "ch6", "chroot", "image"],
         ),
         "_runner_template": attr.label(
             default = "//tools/scripts/templates:lfs_runner_script_template",
@@ -328,9 +308,6 @@ def lfs_package(
         **kwargs: All other arguments passed to the underlying _lfs_package_rule
     """
 
-    # Filter out skip_ownership_check if callers still pass it (backward compat)
-    kwargs.pop("skip_ownership_check", None)
-
     _lfs_package_rule(
         name = name,
         tags = tags,
@@ -343,13 +320,15 @@ def lfs_package(
 
         test_build_cmd = kwargs.get("build_cmd", "make -j$(nproc)")
         if test_build_cmd:
-            combined_test_cmd = test_build_cmd + " && " + test_cmd
+            # Reset to $WORKDIR between build and test so test_cmd runs from a
+            # known directory; a bare ' && ' would re-run any cd in build_cmd
+            # from the wrong place and abort under set -e.
+            combined_test_cmd = test_build_cmd + '\ncd "$WORKDIR"\n' + test_cmd
         else:
             combined_test_cmd = test_cmd
 
         configure_cmd = kwargs.get("configure_cmd", None)
-        configure_cmd_file = kwargs.get("configure_cmd_file", None)
-        if not configure_cmd and not configure_cmd_file:
+        if not configure_cmd:
             configure_cmd = "true"
 
         _lfs_package_rule(
@@ -360,11 +339,8 @@ def lfs_package(
             toolchain = kwargs.get("toolchain", None),
             env = kwargs.get("env", {}),
             configure_cmd = configure_cmd,
-            configure_cmd_file = configure_cmd_file,
             build_cmd = combined_test_cmd,
-            build_cmd_file = kwargs.get("build_cmd_file", None),
             install_cmd = "true",
-            install_cmd_file = kwargs.get("install_cmd_file", None),
             deps = kwargs.get("deps", []),
             tags = ["manual"],
         )

@@ -7,8 +7,6 @@ sensible defaults and phase-based configuration.
 
 Public API:
 - lfs_autotools: Declarative autotools macro using phase presets
-- lfs_plain_make: Macro for packages that only need make + install
-- lfs_autotools_package: Simple autotools wrapper with minimal config
 - lfs_c_binary: Helper for simple C/C++ builds
 - lfs_configure_make: Common configure/make/install pattern
 
@@ -107,15 +105,6 @@ def _render_install(build_subdir, install_targets, destdir):
         targets = targets,
     )
 
-def _render_test(test_cmd):
-    """Pass through test command unchanged.
-
-    Test commands should specify their own directory context.
-    The build template already does cd "$WORKDIR" before this block.
-    For autotools out-of-tree builds, include 'cd build &&' in test_cmd.
-    """
-    return test_cmd
-
 def lfs_autotools(
         name,
         srcs,
@@ -182,9 +171,6 @@ def lfs_autotools(
         make_flags = make_flags,
     )
 
-    # Wrap test_cmd to run from build subdirectory (autotools uses out-of-tree builds)
-    resolved_test_cmd = _render_test(test_cmd)
-
     lfs_package(
         name = name,
         srcs = srcs,
@@ -207,144 +193,6 @@ def lfs_autotools(
         ),
         toolchain = resolved_toolchain,
         env = env,
-        test_cmd = resolved_test_cmd,
-        **kwargs
-    )
-
-def lfs_plain_make(
-        name,
-        srcs,
-        phase,
-        make_targets = [],
-        install_cmd = None,
-        make_flags = None,
-        build_subdir = None,
-        destdir = None,
-        toolchain = None,
-        env = {},
-        test_cmd = None,
-        **kwargs):
-    """Macro for packages that only need make + install (no configure).
-
-    Example:
-        ```python
-        lfs_plain_make(
-            name = "util-linux",
-            srcs = ["@util_linux_src//file"],
-            phase = "ch6",
-            make_targets = ["all"],
-        )
-        ```
-
-    Args:
-      name: Target name
-      srcs: Source files (tarballs)
-      phase: Build phase preset (REQUIRED) - must be one of: "ch5", "ch6", "chroot"
-      make_targets: Make targets to build
-      install_cmd: Custom install command (default: uses phase default)
-      make_flags: Make flags (overrides phase default)
-      build_subdir: Build subdirectory (overrides phase default)
-      destdir: DESTDIR for install (overrides phase default)
-      toolchain: LfsToolchainInfo provider (default: auto-detected)
-      env: Additional environment variables
-      test_cmd: Optional test command (e.g., 'make check'). Creates {name}_test target.
-      **kwargs: Additional arguments passed to lfs_package
-    """
-
-    # Validate phase
-    if phase not in ["ch5", "ch6", "chroot"]:
-        fail("Invalid phase '{}' for {}. Must be one of: ch5, ch6, chroot".format(phase, name))
-
-    resolved_toolchain = toolchain if toolchain else default_package_toolchain()
-    opts = _default_phase_opts(
-        phase = phase,
-        prefix = None,
-        destdir = destdir,
-        build_subdir = build_subdir,
-        make_flags = make_flags,
-    )
-    build_cmd = _render_make(
-        build_subdir = opts["build_subdir"],
-        make_targets = make_targets,
-        make_flags = opts["make_flags"],
-    )
-    final_install = install_cmd if install_cmd else _render_install(
-        build_subdir = opts["build_subdir"],
-        install_targets = ["install"],
-        destdir = opts["destdir"],
-    )
-
-    lfs_package(
-        name = name,
-        srcs = srcs,
-        phase = phase,
-        build_cmd = build_cmd,
-        install_cmd = final_install,
-        toolchain = resolved_toolchain,
-        env = env,
-        test_cmd = test_cmd,
-        **kwargs
-    )
-
-def lfs_autotools_package(
-        name,
-        srcs,
-        prefix = "/tools",
-        phase = None,
-        configure_flags = [],
-        make_flags = [],
-        test_cmd = None,
-        **kwargs):
-    """Convenience macro for standard autotools packages.
-
-    This is a simplified version of lfs_autotools for common cases.
-
-    Example:
-        ```python
-        lfs_autotools_package(
-            name = "m4",
-            srcs = ["@m4//file"],
-            configure_flags = ["--host=$LFS_TGT"],
-        )
-
-        # For chroot builds (Chapter 8+):
-        lfs_autotools_package(
-            name = "zlib",
-            srcs = ["@zlib_src//file"],
-            phase = "chroot",
-            prefix = "/usr",
-        )
-        ```
-
-    Args:
-      name: Target name
-      srcs: Source files (tarballs)
-      prefix: Install prefix (default: /tools)
-      phase: Build phase (optional). If not specified, inferred from prefix:
-             - prefix="/tools" -> "ch5"
-             - prefix="/usr" -> "ch6"
-             - For chroot builds, explicitly pass phase="chroot"
-      configure_flags: Additional flags for configure
-      make_flags: Make flags
-      test_cmd: Optional test command (e.g., 'make check'). Creates {name}_test target.
-      **kwargs: Additional arguments passed to lfs_autotools
-    """
-
-    # Allow explicit phase override, otherwise infer from prefix
-    resolved_phase = phase if phase else ("ch5" if prefix == "/tools" else "ch6")
-
-    # Validate phase
-    if resolved_phase not in ["ch5", "ch6", "chroot"]:
-        fail("Invalid phase '{}' for {}. Must be ch5, ch6, or chroot".format(resolved_phase, name))
-
-    lfs_autotools(
-        name = name,
-        srcs = srcs,
-        phase = resolved_phase,
-        prefix = prefix,
-        configure_flags = configure_flags,
-        make_flags = make_flags,
-        install_targets = ["install"],
         test_cmd = test_cmd,
         **kwargs
     )

@@ -72,6 +72,30 @@ lfs_script(
             FAIL=$((FAIL + 1))
         fi
 
+        # C++ standard libraries with headers (book's g++ pipe-compile test)
+        if printf 'int main(){}' | g++ -x c++ - -o /tmp/lfs_test_cxx 2>/dev/null; then
+            echo "OK:   g++ compilation works"
+            PASS=$((PASS + 1))
+            rm -f /tmp/lfs_test_cxx
+        else
+            echo "FAIL: g++ compilation failed"
+            FAIL=$((FAIL + 1))
+        fi
+
+        # Required aliases: /bin/sh->bash, /usr/bin/yacc->bison, /usr/bin/awk->gawk
+        alias_check() {
+            if $1 --version 2>&1 | grep -qi "$2"; then
+                echo "OK:   $1 is $2"
+                PASS=$((PASS + 1))
+            else
+                echo "FAIL: $1 is NOT $2"
+                FAIL=$((FAIL + 1))
+            fi
+        }
+        alias_check awk  GNU
+        alias_check yacc Bison
+        alias_check sh   Bash
+
         echo ""
         echo "=== Results: $PASS passed, $FAIL failed ==="
 

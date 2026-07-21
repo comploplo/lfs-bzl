@@ -2,16 +2,16 @@
 
 Build **Linux From Scratch** using Bazel! This hybrid build system combines the dependency management and caching power of Bazel with the traditional shell/make-based LFS build process.
 
-**What makes this special?** Instead of forcing LFS into pure Bazel semantics, we use Bazel as a smart orchestrator that respects the LFS book's traditional build patterns while adding modern CI/CD capabilities.
+**What makes this special?** Instead of forcing LFS into pure Bazel semantics, we use Bazel as a smart orchestrator that respects the LFS book's traditional build patterns while adding dependency tracking, caching, and runnable validation targets.
 
 ## 🎯 What Is This Project?
 
-This project implements the entire [Linux From Scratch 12.2](https://www.linuxfromscratch.org/) build process using Bazel build rules. It creates a complete Linux system from source code, demonstrating:
+This project implements the entire [Linux From Scratch 13.0-systemd](https://www.linuxfromscratch.org/lfs/view/13.0-systemd/) build process using Bazel build rules. The recipes contain x86_64 and aarch64 branches; the complete build and boot path is currently verified only for **native arm64 (aarch64) on Apple Silicon** using a rootless Podman worker.
 
 - **Three-stage bootstrap** from your host system to a fully independent OS
-- **Hermetic builds** with proper dependency tracking
+- **Container-isolated builds** with explicit dependency tracking
 - **Incremental compilation** using Bazel's caching
-- **Reproducible results** across different build environments
+- **A repeatable, inspectable LFS build pipeline**
 
 Perfect for learning about Linux internals, build systems, or just building your own custom Linux distribution!
 
@@ -29,7 +29,7 @@ lfs-bzl/
 │   │   ├── chapter_10/     # Linux kernel + GRUB config
 │   │   ├── chapter_11/     # Release files (The End) 🎉
 │   │   └── hello_world/    # Toolchain validation tests
-│   ├── tools/              # Custom Bazel rules (lfs_build.bzl, etc.)
+│   ├── tools/              # Custom Bazel rules (lfs_package.bzl, lfs_macros.bzl, etc.)
 │   ├── sysroot/            # 🎯 Build artifacts (your LFS system!)
 │   └── MODULE.bazel        # Source package definitions
 └── docs/                   # Documentation and design notes
@@ -39,12 +39,17 @@ lfs-bzl/
 
 Before you begin, you'll need:
 
-- **Bazel** 6.0+ with bzlmod enabled
-- **Podman** (rootless mode) for Chapter 7-8+ container-based builds
-- **Host toolchain** meeting LFS Chapter 2 requirements:
-  - GCC 4.8+, g++, make, bash, coreutils, etc.
-  - Run `bazel test //packages/chapter_02:version_check_test` to verify your environment.
-- **Disk space:** ~10GB for sources and build artifacts
+- **Bazel/Bazelisk** with bzlmod support. The repository does not yet pin a
+  tested Bazel release, so use of Bazelisk's moving default is a known gap.
+- **Podman 3.0+** configured for rootless containers. All build phases execute
+  through the Podman worker.
+- **Host tools:** Bash, Podman, and the normal Bazel prerequisites. Run
+  `bazel test //packages/chapter_02:podman_check_test` and then
+  `bazel build //packages/chapter_02:version_check` to validate the environment.
+- **Disk space:** allow at least 20GB. A completed local sysroot is currently
+  about 13GB before Bazel's download and action caches.
+- **Optional boot validation:** QEMU 10+, matching aarch64 UEFI firmware, and
+  Expect (used by `//packages/chapter_11:boot_test`).
 - **No sudo required!** Entire build runs as regular user with rootless Podman
 
 ## 🚀 Quickstart
@@ -53,8 +58,9 @@ Before you begin, you'll need:
 # IMPORTANT: Bazel workspace root is `src/` (commands won't work from repo root)
 cd src
 
-# 1️⃣ Verify your host toolchain meets LFS requirements
-bazel test //packages/chapter_02:version_check_test
+# 1️⃣ Verify Podman and the bootstrap container meet LFS requirements
+bazel test //packages/chapter_02:podman_check_test
+bazel build //packages/chapter_02:version_check
 
 # 2️⃣ Build the cross-toolchain (Chapter 5)
 bazel build //packages/chapter_05
@@ -77,8 +83,9 @@ bazel build //packages/chapter_10
 # 8️⃣ Finalize System (Chapter 11) - creates release files
 bazel build //packages/chapter_11
 
-# 9️⃣ Create bootable disk image (optional)
-bazel build //packages/chapter_11:create_disk_image
+# 9️⃣ Create the self-booting UEFI disk image -> sysroot/lfs-uefi.img (optional)
+bazel build //packages/chapter_11:bootable
+# (fast-iteration raw image instead: //packages/chapter_11:bootable_quick)
 
 # 🧪 Validate each toolchain stage:
 bazel build //packages/hello_world:hello_cross  # Cross Toolchain (Ch 5) ✅
@@ -92,22 +99,23 @@ bazel build //packages/hello_world:hello_final  # Final System (Ch 8) ✅
 - Chapter 6 temporary tools: `src/sysroot/usr/bin/`, `src/sysroot/usr/lib/`
 - Chapter 7+ final system: `src/sysroot/` (root filesystem)
 
-## 🔧 Toolchain Hierarchy (The Three-Stage Bootstrap)
+## 🔧 Toolchain Hierarchy (The Four-Stage Bootstrap)
 
-This project builds **three distinct toolchains** in sequence, each more capable than the last. This mirrors the traditional LFS bootstrap process:
+This project builds **four distinct toolchain stages** in sequence, each more capable than the last. This mirrors the traditional LFS bootstrap process:
 
-### 1️⃣ Host Toolchain (Your System)
+### 1️⃣ Bootstrap Toolchain (Worker Container)
 
-- **Location:** Your native system (`/usr/bin/gcc`, etc.)
+- **Location:** The Podman worker container (`/usr/bin/gcc`, etc.)
 - **Purpose:** Bootstrap the cross-toolchain (Chapter 5)
-- **Verified by:** `bazel test //packages/chapter_02:version_check_test`
-- **Limitation:** Contaminated by host system; not reproducible
+- **Verified by:** `bazel build //packages/chapter_02:version_check`
+- **Limitation:** This first stage comes from the container image rather than
+  the LFS build
 
 ### 2️⃣ Cross Toolchain (Chapter 5) 🎯
 
 - **Bazel Target:** `//packages/chapter_05:cross_toolchain`
-- **Location:** `$LFS/tools/bin` (e.g., `x86_64-lfs-linux-gnu-gcc`)
-- **Purpose:** Build temporary tools (Chapter 6) that run on host but target LFS
+- **Location:** `$LFS/tools/bin` (e.g., `aarch64-lfs-linux-gnu-gcc`; the triplet is `$(uname -m)-lfs-linux-gnu`, derived from the build container's architecture)
+- **Purpose:** Build temporary tools (Chapter 6) for the LFS target
 - **Key Components:**
   - Binutils Pass 1 (assembler, linker)
   - GCC Pass 1 (C/C++ compiler, minimal libc)
@@ -137,9 +145,9 @@ This project builds **three distinct toolchains** in sequence, each more capable
 - **Location:** `$LFS/usr/bin` (native GCC, built inside chroot)
 - **Purpose:** The complete, self-hosting toolchain for the final system
 - **Key Components:**
-  - Native GCC 14.2 (built inside chroot, no host dependencies)
-  - Native Binutils 2.43.1
-  - Glibc 2.40
+  - Native GCC 15.2.0 (built inside chroot, no host dependencies)
+  - Native Binutils 2.46.0
+  - Glibc 2.43
   - 79 total packages (compression, security, python, systemd, etc.)
 - **Validation:** `bazel build //packages/hello_world:hello_final`
 - **Result:** A fully independent, bootable Linux system!
@@ -147,7 +155,7 @@ This project builds **three distinct toolchains** in sequence, each more capable
 ### 🎯 How They Work Together
 
 ```
-Host GCC → builds → Cross Toolchain (Ch 5)
+Container GCC → builds → Cross Toolchain (Ch 5)
                         ↓
           Cross Toolchain → builds → Temp Tools (Ch 6)
                                           ↓
@@ -170,11 +178,11 @@ Each stage removes dependency on the previous, creating a fully independent syst
 
 This project uses a unique hybrid approach across different LFS chapters:
 
-### Chapters 5-6: Native Host Builds
+### Chapters 5-6: Container Builds
 
-- Run directly on your host system
+- Run directly in the rootless Podman worker container (without chroot)
 - Write to staging sysroot (`src/sysroot/`)
-- No containers, no sudo required
+- No host sudo required
 - Fast, simple, cached by Bazel
 
 ### 🚀 Chapters 7-8+: Rootless Podman Worker (No Sudo!)
@@ -193,30 +201,80 @@ This project uses a unique hybrid approach across different LFS chapters:
 
 Current implementation status:
 
-- ✅ **Chapter 5:** Cross-toolchain (5 packages) - Native host builds
-- ✅ **Chapter 6:** Temporary tools (17 packages) - Native host builds
+- ✅ **Chapter 5:** Cross-toolchain (5 packages) - Podman worker container
+- ✅ **Chapter 6:** Temporary tools (17 packages) - Podman worker container
 - ✅ **Chapter 7:** Chroot base system (6 packages) - Rootless Podman worker
 - ✅ **Chapter 8:** Final system (79 packages) - Rootless Podman worker
 - ✅ **Chapter 9:** System Configuration (Systemd, Network, Shells)
 - ✅ **Chapter 10:** Linux Kernel + GRUB bootloader config
 - ✅ **Chapter 11:** Release files (lfs-release, os-release, lsb-release)
 
-**🎉 LFS 12.2 BUILD COMPLETE!** The sysroot contains a bootable Linux system.
+**🎉 LFS 13.0-systemd BUILD COMPLETE!** The sysroot contains a bootable Linux system (native aarch64: glibc 2.43, gcc 15.2.0, binutils 2.46.0, kernel 6.18.10).
+
+- ✅ **BLFS extras** (`//packages/blfs`): sudo, openssh, curl, git, CA
+  certificates, plus login/network config (root password `lfs`, sshd +
+  systemd-resolved enabled) — the booted VM has working DHCP, DNS and ssh.
+
+> [!WARNING]
+> The generated image is a development image with the public root password
+> `lfs` and password-based root SSH enabled. Do not expose it to an untrusted
+> network; change the credentials and SSH policy before any non-local use.
 
 ### 🚀 Booting Your LFS System
 
-Create a bootable disk image and test with QEMU:
+The image now carries everything needed to boot on its own: the kernel, an
+**initramfs** (`initramfs-6.18.10-lfs-13.0-systemd.img`, built in-chroot by
+`mkinitramfs` + LFS-built `cpio`), and a real **UEFI GRUB** binary embedded in
+the image's EFI System Partition — no QEMU `-kernel` injection required. The
+root filesystem is found by `LABEL=lfs-root`, which the initramfs resolves.
+
+> Boot-verified 2026-07-07 on Apple Silicon (QEMU 10 + hvf + edk2-aarch64):
+> UEFI → GRUB 2.14 → Linux 6.18.10-lfs-13.0-systemd → systemd → login prompt.
+
+#### Primary: self-booting UEFI disk
 
 ```bash
-# Build the disk image (uses existing Podman worker - no extra setup needed)
-bazel build //packages/chapter_11:create_disk_image
+# Build the real self-booting UEFI disk image -> sysroot/lfs-uefi.img
+# (Bazel builds kernel + initramfs + GRUB EFI in-chroot; the container only
+#  packages the GPT + FAT ESP via mtools/sgdisk/dd — no loop devices, no sudo)
+bazel build //packages/chapter_11:bootable
 
-# Boot with QEMU (install qemu-system-x86 first)
-qemu-system-x86_64 \
-  -m 2G -enable-kvm \
-  -kernel sysroot/boot/vmlinuz-6.10.5-lfs-12.2 \
-  -append "root=/dev/sda rw console=ttyS0 init=/sbin/init" \
-  -drive file=sysroot/lfs.img,format=raw \
+# Boot in QEMU with aarch64 UEFI firmware (Homebrew qemu ships
+# edk2-aarch64-code.fd). Firmware auto-boots the removable-media fallback
+# \EFI\BOOT\BOOTAA64.EFI — no bootloader install, no NVRAM entry, no efibootmgr.
+qemu-system-aarch64 -M virt -cpu host -accel hvf -m 4G \
+  -drive if=pflash,format=raw,readonly=on,file="$(brew --prefix)/share/qemu/edk2-aarch64-code.fd" \
+  -drive file=sysroot/lfs-uefi.img,format=raw,if=virtio \
+  -netdev user,id=n0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-pci,netdev=n0 \
+  -nographic
+
+# Log in as root (password: lfs), or from another terminal:
+#   ssh -p 2222 root@localhost
+# Exit QEMU: Ctrl-a x
+
+# Automated boot gate (boots a -snapshot copy, checks login + DHCP):
+#   bazel test //packages/chapter_11:boot_test
+# Note: the embedded GRUB config does not pin console=ttyAMA0 on the kernel
+# command line; if no output appears after GRUB with -nographic, drop
+# -nographic and add -device virtio-gpu-pci for a graphical console.
+```
+
+#### Fast-iteration fallback: raw ext4 + QEMU `-kernel`
+
+The original raw-image path is kept for quick iteration — it skips the
+bootloader/ESP assembly and injects the kernel directly:
+
+```bash
+# Build the raw ext4 image (aliases: :bootable_quick or :create_disk_image)
+bazel build //packages/chapter_11:bootable_quick
+
+# Boot with QEMU (-kernel injection; no in-image bootloader)
+qemu-system-aarch64 -M virt -cpu host -accel hvf -m 4G \
+  -kernel sysroot/boot/vmlinuz-6.18.10-lfs-13.0-systemd \
+  -initrd sysroot/boot/initramfs-6.18.10-lfs-13.0-systemd.img \
+  -append "root=LABEL=lfs-root rw console=ttyAMA0" \
+  -drive file=sysroot/lfs.img,format=raw,if=virtio \
   -nographic
 
 # Exit QEMU: Ctrl-a x
@@ -272,18 +330,22 @@ rm -rf sysroot/
 # 2️⃣ Clean Bazel's cache
 bazel clean --expunge
 
-# 3️⃣ Rebuild the complete bootstrap (Chapter 5 → 6 → 7)
+# 3️⃣ Rebuild the complete system and bootable image
 # Build cross-toolchain (Chapter 5) - ~5-10 minutes
 bazel build //packages/chapter_05:cross_toolchain
 
 # Build temporary tools (Chapter 6) - ~30-45 minutes
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 
 # Build Chapter 7 chroot base system - ~5-10 minutes
-bazel build //packages/chapter_07:chroot_toolchain_phase
+bazel build //packages/chapter_07
+
+# Build Chapters 8-11, BLFS extras, and the UEFI image
+bazel build //packages/chapter_11:bootable
 ```
 
-**Expected total rebuild time:** ~1-2 hours depending on hardware
+Build time varies substantially by hardware, cache state, and package test
+load. A clean build is a multi-hour operation.
 
 **Important Notes:**
 
@@ -302,7 +364,7 @@ rm -rf sysroot/usr/
 
 # Rebuild Chapter 6
 bazel clean  # Clear Bazel's action cache
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 ```
 
 **Restart Chapter 7 only:**
@@ -314,7 +376,7 @@ rm -rf sysroot/usr/bin/{bison,perl,python3,makeinfo}
 
 # Rebuild Chapter 7
 bazel clean
-bazel build //packages/chapter_07:chroot_finalize
+bazel build //packages/chapter_07:chroot_cleanup
 ```
 
 ### Clean Build vs Incremental Build
@@ -322,10 +384,10 @@ bazel build //packages/chapter_07:chroot_finalize
 **Clean build (start from scratch):**
 
 ```bash
-sudo tools/scripts/lfs_chroot_helper.sh unmount-vfs "$(pwd)/sysroot"
+bazel run //tools/podman:cleanup_orphaned  # release any stuck containers/mounts
 rm -rf sysroot/
 bazel clean --expunge
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 ```
 
 **Incremental build (preserve sysroot):**
@@ -336,7 +398,7 @@ bazel build //packages/chapter_06:m4
 
 # Or clean Bazel's cache but keep sysroot
 bazel clean
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 ```
 
 **Best practice:** Use incremental builds during development. Only do clean builds when troubleshooting or starting fresh.
@@ -352,7 +414,7 @@ bazel build //packages/chapter_06:all_temp_tools
 ### Project Structure
 
 - **Chapter mapping:** Each LFS chapter maps to a package directory (`src/packages/chapter_XX/`)
-- **Custom rules:** All build logic lives in `src/tools/lfs_build.bzl`
+- **Custom rules:** Build logic lives in `src/tools/lfs_package.bzl` and `lfs_macros.bzl`
 - **Source definitions:** Package URLs and checksums in `src/MODULE.bazel`
 
 ## 📚 Documentation
@@ -378,7 +440,7 @@ This project is licensed under the **Apache License 2.0** - see the [LICENSE](LI
 
 ### Third-Party Licenses
 
-This repository includes the [Linux From Scratch 12.2 book](https://www.linuxfromscratch.org/) as a Git submodule in `docs/lfs-book/` for reference purposes. The LFS book has its own separate licensing:
+This repository includes the [Linux From Scratch book](https://www.linuxfromscratch.org/) as a Git submodule in `docs/lfs-book/` for reference purposes. That submodule is currently pinned to the 12.2 branch while the build recipes follow 13.0-systemd; use the linked online 13.0 book when checking recipe details. The LFS book has its own separate licensing:
 
 - **Book text:** [Creative Commons Attribution-NonCommercial-ShareAlike 2.0](https://creativecommons.org/licenses/by-nc-sa/2.0/)
 - **Code/instructions:** [MIT License](https://opensource.org/licenses/MIT)
@@ -389,7 +451,7 @@ See `docs/lfs-book/appendices/license.xml` for the full LFS license details.
 
 ### Official Guides
 
-- [Linux From Scratch 12.2 Book](https://www.linuxfromscratch.org/lfs/view/stable/) - The source material
+- [Linux From Scratch 13.0-systemd Book](https://www.linuxfromscratch.org/lfs/view/13.0-systemd/) - The source material
 - [Bazel Documentation](https://bazel.build/docs) - Build system reference
 
 ### Community

@@ -21,14 +21,14 @@ The chroot (change root) operation isolates our build environment:
 
 These packages are required by Chapter 8 build scripts but weren't needed in Chapter 6:
 
-| Package        | Purpose                                                    | Why Now?                           |
+| Package | Purpose | Why Now? |
 | -------------- | ---------------------------------------------------------- | ---------------------------------- |
-| **Gettext**    | Internationalization (i18n) and localization tools         | Required by many Chapter 8 builds  |
-| **Bison**      | Parser generator (creates compilers from grammar files)    | Used by several build systems      |
-| **Perl**       | Powerful scripting language                                | Many configure scripts use Perl    |
-| **Python**     | Modern programming language                                | Modern build systems (Meson, etc.) |
-| **Texinfo**    | Documentation system (creates info, HTML, PDF from source) | Needed for package documentation   |
-| **Util-linux** | Essential system utilities (mount, lsblk, etc.)            | Core system management tools       |
+| **Gettext** | Internationalization (i18n) and localization tools | Required by many Chapter 8 builds |
+| **Bison** | Parser generator (creates compilers from grammar files) | Used by several build systems |
+| **Perl** | Powerful scripting language | Many configure scripts use Perl |
+| **Python** | Modern programming language | Modern build systems (Meson, etc.) |
+| **Texinfo** | Documentation system (creates info, HTML, PDF from source) | Needed for package documentation |
+| **Util-linux** | Essential system utilities (mount, lsblk, etc.) | Core system management tools |
 
 ## 🏗️ Build Process
 
@@ -37,9 +37,9 @@ These packages are required by Chapter 8 build scripts but weren't needed in Cha
 Before building Chapter 7, ensure:
 
 - ✅ Rootless Podman configured (test with `podman run --rm hello-world`)
-- ✅ Chapter 6 temporary tools built: `bazel build //packages/chapter_06:all_temp_tools`
+- ✅ Chapter 6 temporary tools built: `bazel build //packages/chapter_06`
 - Build Chapter 7 end-to-end: `bazel build //packages:bootstrap_ch7`
-- Or run just Chapter 7: `bazel build //packages/chapter_07:chroot_finalize`
+- Or run just Chapter 7: `bazel build //packages/chapter_07:chroot_cleanup`
 
 ### No Sudo Required!
 
@@ -60,14 +60,14 @@ cd src
 # 1. Prepare the chroot environment (create directories, seed files)
 bazel build //packages/chapter_07:chroot_prepare
 
-# 2. Build all Chapter 7 packages (runs in parallel via Podman worker)
-bazel build //packages/chapter_07:chroot_toolchain_phase
+# 2. Build all Chapter 7 packages (serialized through the Podman worker)
+bazel build //packages/chapter_07
 
 # 3. Verify installations
 bazel build //packages/chapter_07:chroot_smoke_versions
 
 # 4. (Optional) Perform Chapter 7 cleanup (removes libtool archives, /tools)
-bazel build //packages/chapter_07:chroot_finalize
+bazel build //packages/chapter_07:chroot_cleanup
 ```
 
 **Note:** No source staging needed! The `lfs_package` rule automatically extracts tarballs from Bazel's external repos.
@@ -81,7 +81,8 @@ bazel build //packages/chapter_07:chroot_finalize
 1. **Build Execution** - Commands run inside chroot following LFS book
 1. **Cleanup** - If requested, removes libtool archives and `/tools`
 
-**Parallel Build Support**: Chapter 7 packages build in parallel using the Podman worker. Bazel handles scheduling automatically. Use `--jobs=N` to control concurrency if needed.
+**Serialized worker:** These actions share one mutable sysroot, so `.bazelrc`
+limits the `LfsWorkerBuild` mnemonic to one worker instance.
 
 ## 🔍 Build Details
 
@@ -138,11 +139,11 @@ Expected output (in build log):
 
 ```
 bison (GNU Bison) 3.8.2
-msgfmt (GNU gettext-tools) 0.22.5
-version='5.40.0';
-Python 3.12.4
-info (GNU texinfo) 7.1
-lsblk from util-linux 2.40.2
+msgfmt (GNU gettext-tools) 1.0
+version='5.42.0';
+Python 3.14.3
+info (GNU texinfo) 7.2
+lsblk from util-linux 2.41.3
 ```
 
 ## 🐛 Troubleshooting
@@ -167,7 +168,7 @@ See [docs/troubleshooting.md](troubleshooting.md) for detailed Podman setup.
 **Solution:** Ensure Chapter 6 temporary tools are fully built:
 
 ```bash
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 ls -la sysroot/usr/bin/  # Verify tools exist
 ```
 
@@ -191,8 +192,8 @@ ______________________________________________________________________
 
 ### How Podman Solves Ownership Issues
 
-- **Chapter 5-6:** Builds run on host, write to sysroot as regular user
-- **Chapter 7-8+:** Podman container uses user namespaces to run as root inside container
+- **Chapter 5-6:** Builds run in container mode and write to the mounted sysroot
+- **Chapter 7+:** Podman uses user namespaces to run chroot operations as root inside the container
 - **No chown needed:** Sysroot remains owned by your user throughout the entire build process
 
 ### Benefits
@@ -206,7 +207,7 @@ ______________________________________________________________________
 
 ## 📊 Package Details
 
-### Gettext 0.22.5
+### Gettext 1.0
 
 - **Build Time:** ~2 minutes
 - **Install Size:** ~50 MB
@@ -218,46 +219,38 @@ ______________________________________________________________________
 - **Install Size:** ~15 MB
 - **Purpose:** Parser generator for building compilers
 
-### Perl 5.40.0
+### Perl 5.42.0
 
 - **Build Time:** ~3-5 minutes
 - **Install Size:** ~150 MB
 - **Purpose:** Scripting language used by many configure scripts
 
-### Python 3.12.4
+### Python 3.14.3
 
 - **Build Time:** ~5-10 minutes (with optimizations)
 - **Install Size:** ~400 MB
 - **Purpose:** Required by Meson and modern build systems
 
-### Texinfo 7.1
+### Texinfo 7.2
 
 - **Build Time:** ~1 minute
 - **Install Size:** ~30 MB
 - **Purpose:** Creates documentation in various formats
 
-### Util-linux 2.40.2
+### Util-linux 2.41.3
 
 - **Build Time:** ~2 minutes
 - **Install Size:** ~100 MB
 - **Purpose:** Essential utilities like `mount`, `lsblk`, `fdisk`
 
-## 🔜 Next Steps
-
-After completing Chapter 7:
-
-1. **Backup your sysroot** - Create a tarball of `sysroot/` for safety
-1. **Move to Chapter 8** - Build the final system (~80 packages)
-1. **Stripping** - Remove debug symbols to save space (optional)
-
 ## 📖 Appendix
 
 ### LFS Book Reference
 
-- [Chapter 7.2 - Changing Ownership](https://www.linuxfromscratch.org/lfs/view/12.2/chapter07/changingowner.html)
-- [Chapter 7.3 - Preparing Virtual Kernel File Systems](https://www.linuxfromscratch.org/lfs/view/12.2/chapter07/kernfs.html)
-- [Chapter 7.4 - Entering the Chroot Environment](https://www.linuxfromscratch.org/lfs/view/12.2/chapter07/chroot.html)
-- [Chapter 7.5-7.13 - Package Builds](https://www.linuxfromscratch.org/lfs/view/12.2/chapter07/gettext.html)
+- [Chapter 7.2 - Changing Ownership](https://www.linuxfromscratch.org/lfs/view/13.0-systemd/chapter07/changingowner.html)
+- [Chapter 7.3 - Preparing Virtual Kernel File Systems](https://www.linuxfromscratch.org/lfs/view/13.0-systemd/chapter07/kernfs.html)
+- [Chapter 7.4 - Entering the Chroot Environment](https://www.linuxfromscratch.org/lfs/view/13.0-systemd/chapter07/chroot.html)
+- [Chapter 7.5-7.13 - Package Builds](https://www.linuxfromscratch.org/lfs/view/13.0-systemd/chapter07/gettext.html)
 
 ### Related Documentation
 
@@ -267,4 +260,4 @@ After completing Chapter 7:
 
 ______________________________________________________________________
 
-**Status:** Chapter 7 complete! Ready for Chapter 8. 🎉
+**Status:** Chapter 7 complete; Chapters 8–11 and the bootable image are also implemented.

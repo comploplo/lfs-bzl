@@ -20,3 +20,10 @@ CLAUDE.md
 .vscode/
 *.swp
 *.swo
+
+# macOS case-sensitive sysroot disk image
+/lfs-sysroot.sparseimage
+/lfs-uefi*.img
+/src/sysroot.arm64.sparsebundle/
+/src/sysroot.*-backup-*/
+/src/sysroot.failed-*/

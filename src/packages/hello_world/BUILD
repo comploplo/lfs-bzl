@@ -144,7 +144,7 @@ lfs_package(
         fi
         rm -f /tmp/gcc_check /tmp/gcc_check.c
 
-        # Build hello_final (reduced verbosity - use hello_final_verbose for debugging)
+        # Build hello_final
         cat > /tmp/hello_final.c <<'EOF'
 #include <stdio.h>
 
@@ -163,43 +163,6 @@ EOF
     create_runner = True,
     install_cmd = "true",
     phase = "chroot",
-    visibility = ["//visibility:public"],
-    deps = ["//packages/chapter_08:gcc"],
-)
-
-# Verbose version for debugging toolchain issues
-# Usage: bazel build //packages/hello_world:hello_final_verbose
-lfs_package(
-    name = "hello_final_verbose",
-    build_cmd = """
-        # Same prerequisite validation as hello_final
-        if ! command -v gcc &> /dev/null; then
-            echo "ERROR: GCC not found. Build Chapter 8 first:" >&2
-            echo "  bazel build //packages/chapter_08:gcc" >&2
-            exit 1
-        fi
-
-        cat > /tmp/hello_final.c <<'EOF'
-#include <stdio.h>
-
-int main(void)
-{
-    printf("Hello from LFS Final System (Chapter 8)!\\n");
-    printf("Built with native GCC from the complete LFS toolchain.\\n");
-    return 0;
-}
-EOF
-        echo "=== Compiling with verbose output ==="
-        gcc -v /tmp/hello_final.c -o /tmp/hello_final
-        echo ""
-        echo "=== Running ==="
-        /tmp/hello_final
-        rm -f /tmp/hello_final.c /tmp/hello_final
-    """,
-    configure_cmd = "true",
-    install_cmd = "true",
-    phase = "chroot",
-    tags = ["manual"],  # Only build when explicitly requested
     visibility = ["//visibility:public"],
     deps = ["//packages/chapter_08:gcc"],
 )

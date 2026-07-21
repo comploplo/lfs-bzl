@@ -33,7 +33,9 @@ ERROR: Build did NOT complete successfully
 
 ```bash
 # Check if Chapter 5 cross-toolchain exists
-ls -la src/sysroot/tools/bin/x86_64-lfs-linux-gnu-gcc
+# (triplet matches the build container's arch: aarch64-lfs-linux-gnu-gcc on
+#  the native arm64 build, x86_64-lfs-linux-gnu-gcc on x86_64)
+ls -la src/sysroot/tools/bin/aarch64-lfs-linux-gnu-gcc
 
 # Check if Chapter 6 temporary tools exist
 ls -la src/sysroot/usr/bin/gcc
@@ -42,7 +44,7 @@ ls -la src/sysroot/usr/bin/gcc
 cd src
 bazel clean
 bazel build //packages/chapter_05:cross_toolchain
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 ```
 
 ______________________________________________________________________
@@ -84,72 +86,32 @@ ______________________________________________________________________
 
 ```
 mkdir: cannot create directory 'sysroot/usr': Permission denied
-
-================================================================================
-ERROR: Sysroot Ownership Problem Detected
-================================================================================
-The sysroot directory has been changed to root ownership...
 ```
 
 **Root Cause:**
 
-This happens when you try to re-run Chapter 5-6 builds AFTER running Chapter 7's
-`chroot_chown_root` step. This is expected behavior, not a bug!
+The rootless Podman worker keeps the sysroot **user-owned at every phase** — it
+never chowns anything to root. So this error means some files are root-owned from
+an *older* build (e.g. a previous sudo-based checkout), not from normal operation.
 
-**The Build Lifecycle:**
-
-1. Chapter 5-6: Build as regular user → sysroot owned by user
-1. Chapter 7: Run `chroot_chown_root` → sysroot owned by root
-1. Attempting Chapter 5-6 again → FAILS (can't write to root-owned dirs)
-
-**Solutions:**
-
-**Option 1: Restore user ownership (recommended for development)**
+**Solution:**
 
 ```bash
-# Reclaim ownership of sysroot
+# Reclaim ownership of any root-owned leftovers, then rebuild
 sudo chown -R $USER:$USER src/sysroot/
+ls -ld src/sysroot/usr src/sysroot/tools   # should show your user
 
-# Verify ownership
-ls -ld src/sysroot/usr src/sysroot/tools
-# Should show your user, not root
-
-# Now you can re-run Chapter 5-6 builds
 bazel build //packages/chapter_05:binutils_pass1
 ```
 
-**Option 2: Create a checkpoint backup**
+If you want to iterate on early chapters without disturbing a later-chapter
+sysroot, use a separate worktree:
 
 ```bash
-# Before running Chapter 7, create a backup at the Chapter 6 state
-cd src
-tar czf ../sysroot-ch6-backup.tar.gz sysroot/
-
-# Later, to restore:
-cd src
-rm -rf sysroot/
-tar xzf ../sysroot-ch6-backup.tar.gz
-```
-
-**Option 3: Use separate build environments**
-
-```bash
-# For iterative Chapter 5-6 development
 git worktree add ../lfs-bzl-ch6 HEAD
 cd ../lfs-bzl-ch6/src
-bazel build //packages/chapter_06:all_temp_tools
-
-# For Chapter 7+ work
-cd original-repo/src
-bazel build //packages/chapter_07:chroot_toolchain_phase
+bazel build //packages/chapter_06
 ```
-
-**Important Notes:**
-
-- The build system now detects this issue automatically and provides guidance
-- Restoring ownership UNDOES Chapter 7 changes (you'll need to re-run chroot_chown_root)
-- This is a natural consequence of the LFS bootstrap process
-- Consider your workflow: building forward (Ch5→Ch6→Ch7) vs iterating on early chapters
 
 **See Also:**
 
@@ -187,36 +149,28 @@ ______________________________________________________________________
 
 ### "Permission denied" running chroot commands
 
-**Symptoms:**
-
-```
-sudo: no tty present and no askpass program specified
-ERROR: Build did NOT complete successfully
-```
+Chroot builds run inside a **rootless Podman worker** — no `sudo` and no sudoers
+entry is required. If you hit permission errors, the cause is almost always the
+container runtime, not host privileges.
 
 **Causes:**
 
-1. Sudoers not configured for chroot helper
-1. Wrong path in sudoers file
-1. Sudoers syntax error
+1. Podman not installed or not on `$PATH`
+1. Rootless Podman not configured (missing `/etc/subuid` / `/etc/subgid` ranges)
+1. A stale worker container holding the sysroot
 
 **Solutions:**
 
 ```bash
-# 1. Find the absolute path to the helper script
-realpath src/tools/lfs-chroot-helper.sh
+# 1. Confirm rootless Podman works at all
+podman info --format '{{.Host.Security.Rootless}}'   # should print: true
+podman run --rm hello-world
 
-# 2. Create sudoers entry (replace paths!)
-sudo visudo -f /etc/sudoers.d/lfs-bazel-chroot
+# 2. Ensure your user has subuid/subgid ranges (needed for rootless)
+grep "$(whoami)" /etc/subuid /etc/subgid
 
-# Add this line (use YOUR username and path):
-<user> ALL=(root) NOPASSWD: /home/user/lfs-bzl/src/tools/lfs-chroot-helper.sh
-
-# 3. Validate sudoers syntax
-sudo visudo -c
-
-# 4. Test sudo access
-sudo src/tools/lfs-chroot-helper.sh check-mounts $(pwd)/src/sysroot
+# 3. Release any stuck worker container / mounts, then rebuild
+bazel run //tools/podman:cleanup_orphaned
 ```
 
 ______________________________________________________________________
@@ -238,22 +192,16 @@ mount: /home/user/lfs-bzl/src/sysroot/dev: already mounted
 
 **Solutions:**
 
+The Podman worker mounts the virtual filesystems *inside* its own container, so
+there is nothing to unmount on the host. Clearing a stuck build means removing the
+orphaned container:
+
 ```bash
-# Check what's mounted
-mount | grep sysroot
+# Release orphaned worker containers and their mounts
+bazel run //tools/podman:cleanup_orphaned
 
-# Unmount everything
-sudo src/tools/lfs-chroot-helper.sh unmount-vfs $(pwd)/src/sysroot
-
-# If that fails, force unmount
-sudo umount -l src/sysroot/dev/pts
-sudo umount -l src/sysroot/dev
-sudo umount -l src/sysroot/proc
-sudo umount -l src/sysroot/sys
-sudo umount -l src/sysroot/run
-
-# Verify clean
-mount | grep sysroot  # Should return nothing
+# Inspect manually if needed
+podman ps -a --filter name=lfs
 ```
 
 ______________________________________________________________________
@@ -282,7 +230,7 @@ ls -la src/sysroot/usr/bin/bash
 ls -la src/sysroot/usr/lib/libc.so*
 
 # Rebuild Chapter 6
-bazel build //packages/chapter_06:all_temp_tools
+bazel build //packages/chapter_06
 
 # Check bash can run (may need to set LD_LIBRARY_PATH)
 LD_LIBRARY_PATH=src/sysroot/usr/lib src/sysroot/usr/bin/bash --version
@@ -406,8 +354,8 @@ bazel build //packages/chapter_05:binutils_pass1
 
 # If checksum mismatch, update MODULE.bazel with new SHA256
 # Download file manually to check:
-wget https://ftpmirror.gnu.org/binutils/binutils-2.43.1.tar.xz
-sha256sum binutils-2.43.1.tar.xz
+wget https://sourceware.org/pub/binutils/releases/binutils-2.46.0.tar.xz
+sha256sum binutils-2.46.0.tar.xz
 ```
 
 ______________________________________________________________________
@@ -435,10 +383,7 @@ iostat -x 1  # Is disk bottlenecked?
 # 3. Use faster storage
 # Move workspace to SSD if on HDD
 
-# 4. Increase Bazel parallelism
-bazel build --jobs=8 //packages/chapter_06:all_temp_tools
-
-# 5. Disable optimizations for testing
+# 4. Disable optimizations for testing
 # In BUILD files, temporarily remove --enable-optimizations
 ```
 
@@ -481,7 +426,7 @@ If you still hit OOM:
 build_cmd = "cd build && make -j2",
 
 # Option 2: Limit Bazel worker instances globally in .bazelrc
-build --worker_max_instances=LfsChrootBuild=1
+build --worker_max_instances=LfsWorkerBuild=1
 
 # Option 3: Add swap space temporarily
 sudo fallocate -l 8G /swapfile
@@ -531,7 +476,7 @@ ______________________________________________________________________
 
 ## 🌍 Environment Problems
 
-### Host toolchain version too old
+### Bootstrap container toolchain version too old
 
 **Symptoms:**
 
@@ -543,20 +488,11 @@ gcc version 4.7 is too old (need 4.8+)
 **Solutions:**
 
 ```bash
-# Check your versions
-gcc --version
-g++ --version
-make --version
+# Validate the tools inside the worker container
+bazel build //packages/chapter_02:version_check
 
-# On Ubuntu/Debian, update:
-sudo apt update
-sudo apt install build-essential gcc g++ make
-
-# On older systems, install newer gcc from PPA:
-sudo add-apt-repository ppa:ubuntu-toolchain-r/test
-sudo apt update
-sudo apt install gcc-11 g++-11
-sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
+# If this fails, update tools/podman/Containerfile, then rebuild the image
+bazel run //tools/podman:container_image
 ```
 
 ______________________________________________________________________
@@ -590,11 +526,8 @@ ______________________________________________________________________
 
 ### Bazel version mismatch
 
-**Symptoms:**
-
-```
-ERROR: This build requires Bazel 6.0 or later
-```
+**Symptoms:** Bazel fails during module resolution or reports an unsupported
+version. The repository does not currently pin a tested Bazel release.
 
 **Solutions:**
 
@@ -602,19 +535,18 @@ ERROR: This build requires Bazel 6.0 or later
 # Check Bazel version
 bazel version
 
-# Install latest Bazel (Bazelisk recommended)
+# Install Bazelisk (recommended)
 npm install -g @bazel/bazelisk
 # Or download from: https://github.com/bazelbuild/bazel/releases
 
-# Use specific version with Bazelisk
-echo "6.4.0" > .bazelversion
+# Once a release is verified, pin it in a repository-root .bazelversion file.
 ```
 
 ______________________________________________________________________
 
 ## 🧪 Expected Test Failures
 
-This section documents test failures that are expected and acceptable according to the LFS 12.2 book. Understanding these expected failures helps distinguish between normal behavior and actual problems.
+This section documents test failures that are expected and acceptable according to the LFS 13.0 book. Understanding these expected failures helps distinguish between normal behavior and actual problems.
 
 ### Critical Test Suites
 
@@ -633,7 +565,7 @@ This section documents test failures that are expected and acceptable according 
 
 ```bash
 # Check for timeout failures in test output
-grep "Timed out" bazel-bin/packages/chapter_08/glibc_test.log
+grep "Timed out" bazel-bin/packages/chapter_08/glibc_test_package.log
 
 # Re-run specific test with extended timeout
 TIMEOUTFACTOR=10 make test t=nss/tst-nss-files-hosts-multi
@@ -810,37 +742,43 @@ grep "ALL TESTS PASSED" vim-test.log
 
 ### Running Tests
 
+Packages that define a `test_cmd` get a generated `{name}_test` target
+(58 of the Chapter 8 packages have one).
+
 ```bash
-# Build all packages (includes ~60 inline tests)
-bazel build //packages/chapter_08:all_chapter_08
+# Build all Chapter 8 packages
+bazel build //packages/chapter_08:chapter_08
 
-# Run critical tests separately
-bazel test //packages/chapter_08:critical_tests
-
-# Run individual critical tests
+# Run individual package test suites (critical: glibc, gcc, binutils)
 bazel test //packages/chapter_08:glibc_test
 bazel test //packages/chapter_08:gcc_test
 bazel test //packages/chapter_08:binutils_test
 
-# Quick smoke tests
-bazel test //packages/chapter_08:smoke_tests
+# Quick smoke check of installed tool versions (build target, not a test)
+bazel build //packages/chapter_08:ch8_smoke_versions
+
+# Podman worker unit tests
+bazel test //tools/podman:worker_test
 ```
 
 ### Viewing Test Results
 
+Each `{name}_test` runs the suite via a `{name}_test_package` build whose
+output lands in `bazel-bin/packages/chapter_08/{name}_test_package.log`.
+
 ```bash
 # View complete test log
-cat bazel-bin/packages/chapter_08/glibc_test.log
-cat bazel-bin/packages/chapter_08/gcc_test.log
-cat bazel-bin/packages/chapter_08/binutils_test.log
+cat bazel-bin/packages/chapter_08/glibc_test_package.log
+cat bazel-bin/packages/chapter_08/gcc_test_package.log
+cat bazel-bin/packages/chapter_08/binutils_test_package.log
 
 # Search for failures
-grep -i "fail" bazel-bin/packages/chapter_08/glibc_test.log
-grep -i "error" bazel-bin/packages/chapter_08/gcc_test.log
+grep -i "fail" bazel-bin/packages/chapter_08/glibc_test_package.log
+grep -i "error" bazel-bin/packages/chapter_08/gcc_test_package.log
 
 # Count passes and failures
-grep -c "PASS" bazel-bin/packages/chapter_08/glibc_test.log
-grep -c "FAIL" bazel-bin/packages/chapter_08/glibc_test.log
+grep -c "PASS" bazel-bin/packages/chapter_08/glibc_test_package.log
+grep -c "FAIL" bazel-bin/packages/chapter_08/glibc_test_package.log
 ```
 
 ### When to Worry About Test Failures
@@ -854,7 +792,7 @@ Contact LFS support or consult forums if:
 
 ### References
 
-- LFS Book Chapter 8: https://www.linuxfromscratch.org/lfs/view/12.2/chapter08/
+- LFS Book Chapter 8: https://www.linuxfromscratch.org/lfs/view/13.0-systemd/chapter08/
 - Test specifications from: `docs/lfs-book/chapter08/*.xml`
 
 ______________________________________________________________________
@@ -940,10 +878,10 @@ bazel clean
 # Clean everything (including download cache)
 bazel clean --expunge
 
-# Unmount all chroot mounts
-sudo src/tools/lfs-chroot-helper.sh unmount-vfs $(pwd)/src/sysroot
+# Release orphaned worker containers and their mounts
+bazel run //tools/podman:cleanup_orphaned
 
-# Reset sysroot ownership
+# Reclaim ownership of any root-owned leftovers
 sudo chown -R $USER:$USER src/sysroot/
 
 # Start fresh (nuclear option)

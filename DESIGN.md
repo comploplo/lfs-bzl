@@ -1,7 +1,7 @@
 # 🎭 Design Document: The "Managed Chaos" Architecture
 
 **Project:** `lfs-bazel-bootstrap`
-**Target:** Linux From Scratch 12.2 (systemd)
+**Target:** Linux From Scratch 13.0 (systemd), arch-parameterized (currently native aarch64)
 **Build System:** Bazel (Orchestrator) + Make/Shell (Executor)
 
 ## 1. 🧠 Core Philosophy: "Managed Chaos"
@@ -32,19 +32,25 @@ We use a three-tier layout to separate knowledge, tracking, and execution.
 │   ├── tools.md               # Bazel rules reference
 │   └── troubleshooting.md     # Common issues and solutions
 └── src/                       # 🔧 The Bazel Workspace
-    ├── WORKSPACE              # Root Bazel definition
-    ├── MODULE.bazel           # Bzlmod package definitions
+    ├── MODULE.bazel           # Bzlmod module and source definitions
     ├── sysroot/               # 🎯 THE ARTIFACT: Acts as $LFS (e.g., /mnt/lfs)
     │                          # NOTE: This is a folder *inside* the workspace.
     ├── tools/                 # 🌉 The "Bridge" Logic (Starlark)
     │   ├── providers.bzl      # Toolchain definitions
-    │   ├── lfs_build.bzl      # Host-side + chroot execution rules
+    │   ├── lfs_package.bzl    # Core rule: container + chroot execution
+    │   ├── lfs_macros.bzl     # Convenience macros (autotools, etc.)
+    │   ├── podman/            # Rootless Podman chroot worker
     │   └── lfs_defaults.bzl   # Phase presets (ch5/ch6/ch7)
     └── packages/              # 📦 The Implementation
         ├── chapter_04/        # Setup (creating directories)
         ├── chapter_05/        # Cross-Toolchain (binutils, gcc, glibc)
         ├── chapter_06/        # Temporary Tools (17 packages)
-        └── chapter_07/        # Chroot preparation (6 packages)
+        ├── chapter_07/        # Chroot preparation (6 packages)
+        ├── chapter_08/        # Final system
+        ├── chapter_09/        # System configuration
+        ├── chapter_10/        # Kernel, initramfs, and UEFI GRUB
+        ├── chapter_11/        # Release files and disk images
+        └── blfs/              # Networking and development extras
 ```
 
 ______________________________________________________________________
@@ -66,10 +72,10 @@ LfsToolchainInfo = provider(
 )
 ```
 
-### Component B: 🏗️ The Host Bridge (`tools/lfs_build.bzl`)
+### Component B: 🏗️ The Container Bridge (`tools/lfs_package.bzl`)
 
-**Used for:** Chapters 2–5 (Constructing the Cross-Toolchain).
-**Execution Context:** The Host OS.
+**Used for:** Chapters 2–6 (bootstrap and temporary tools).
+**Execution Context:** Rootless Podman container, without chroot.
 
 - **Inputs:** `srcs` (tarballs), `cmd` (shell script), optional `toolchain` (LfsToolchainInfo).
 - **Logic:**
@@ -79,7 +85,7 @@ LfsToolchainInfo = provider(
   1. Runs the user's `cmd`.
 - **Output:** A `.done` marker file to signal completion to Bazel.
 
-### Component C: 🚪 The Chroot Bridge (`tools/lfs_build.bzl`)
+### Component C: 🚪 The Chroot Mode (`tools/lfs_package.bzl` + `tools/podman/worker.py`)
 
 **Used for:** Chapter 7+ (Building the Final System).
 **Execution Context:** Inside rootless Podman container running chroot.
@@ -99,23 +105,23 @@ ______________________________________________________________________
 
 ### Phase 1: 🏗️ Infrastructure
 
-- Initialize `WORKSPACE` and `sysroot`.
+- Initialize `MODULE.bazel` and `sysroot`.
 - Implement the Starlark rules.
-- **Verification:** Build a "Hello World" to `sysroot/tools` using the host compiler.
+- **Verification:** Build a "Hello World" to `sysroot/tools` using the container bootstrap compiler.
 
 ### Phase 2: 🎯 The Cross-Toolchain (Chapter 5)
 
-- **Goal:** Build the toolchain that runs on Host but targets LFS.
-- **Mechanism:** Use `lfs_package` without a toolchain (uses Host GCC).
+- **Goal:** Build the toolchain that runs in the worker container and targets LFS.
+- **Mechanism:** Use `lfs_package` in container mode with the bootstrap GCC.
 - **Key Packages:** Binutils (Pass 1), GCC (Pass 1), Linux Headers, Glibc, Libstdc++.
 
 ### Phase 3: 🤝 The "Handover" (End of Chapter 5)
 
-- **Goal:** Stop using Host GCC. Start using the GCC we just built.
+- **Goal:** Stop using the container bootstrap GCC. Start using the GCC we just built.
 - **Action:** Define a Bazel target `//packages/chapter_05:cross_toolchain` using `LfsToolchainInfo`.
 - **Content:**
   - `bin_path`: `$LFS/tools/bin`
-  - `env`: `CC="x86_64-lfs-linux-gnu-gcc"`, `LFS_TGT="..."`
+  - `env`: `CC="$LFS_TGT-gcc"`, where `LFS_TGT` is `$(uname -m)-lfs-linux-gnu` (e.g. `aarch64-lfs-linux-gnu`)
 
 ### Phase 4: 🚀 Temporary Tools (Chapter 6)
 
@@ -132,12 +138,13 @@ ______________________________________________________________________
 - **Toolchain:** Temporary tools from Chapter 6 (available inside chroot)
 - **No Sudo:** Rootless Podman worker handles all chroot operations
 
-### Phase 6: 🎉 The Final System (Chapter 8+)
+### Phase 6: 🎉 The Final System (Chapters 8–11 + BLFS)
 
 - **Goal:** Build the OS using the temporary toolchain inside the chroot.
 - **Mechanism:** Use `lfs_package` with `phase="chroot"` (same Podman worker as Chapter 7).
 - **Dependency:** All targets depend on `//packages/chapter_07:chroot_base_toolchain`.
 - **No Sudo:** Entire build process runs as regular user with rootless Podman
+- **Result:** Final packages, system configuration, kernel, initramfs, UEFI GRUB, BLFS extras, and bootable disk images.
 
 ______________________________________________________________________
 
@@ -147,7 +154,7 @@ The rootless Podman worker provides secure isolation without sudo:
 
 - **User namespaces:** Processes run as root inside container, regular user on host
 - **Network isolation:** Builds run with `--network=none` (offline enforcement)
-- **Filesystem isolation:** Only sysroot is mounted, rest of host filesystem is inaccessible
+- **Filesystem isolation:** The worker mounts the sysroot plus the Bazel inputs and caches needed for the build; unrelated host paths are not mounted
 - **No sudo required:** Entire build process runs as regular user
 - **Persistent worker:** JSON worker protocol amortizes container startup cost
 
@@ -243,8 +250,9 @@ ______________________________________________________________________
 ### Current Limitations
 
 1. **No Remote Execution:** Builds run outside Bazel's sandbox, so they can't leverage remote execution or strict hermetic builds.
-1. **Chapter 5-6 Host Builds:** Early toolchain builds run unsandboxed on host (Chapters 5-6). Chapter 7+ uses isolated Podman worker.
-1. **Podman Requirement:** Chapter 7+ requires rootless Podman configured on the host system.
+1. **Mutable Sysroot:** Actions install into a shared workspace sysroot, so Bazel markers and the sysroot must remain in sync.
+1. **Podman Requirement:** Every build phase requires rootless Podman configured on the host system.
+1. **Platform Validation:** The complete build and UEFI boot path is currently verified only on Apple Silicon/aarch64.
 
 ### Design Decisions
 
@@ -256,12 +264,9 @@ ______________________________________________________________________
 
 - [ ] Add support for `rules_oci` to build container images from sysroot
 - [ ] Implement build artifact caching beyond Bazel's local cache
-- [x] ~~Add Chapter 8+ package definitions~~ (COMPLETE - 79 packages)
 - [ ] Create automated tests for each chapter
-- [ ] Support for BLFS (Beyond Linux From Scratch) packages
-- [ ] Chapter 9: System configuration
-- [ ] Chapter 10: Make bootable (kernel, GRUB)
-- [ ] Chapter 11: Finalization and disk image
+- [ ] Verify the complete build and boot path on x86_64
+- [ ] Pin and continuously test a Bazel release
 
 ______________________________________________________________________
 
@@ -269,10 +274,13 @@ ______________________________________________________________________
 
 ### Implementation
 
-- **[tools/lfs_build.bzl](src/tools/lfs_build.bzl)** - Core build rules
+- **[tools/lfs_package.bzl](src/tools/lfs_package.bzl)** - Core `lfs_package` rule
+- **[tools/lfs_script.bzl](src/tools/lfs_script.bzl)** - Script-only package wrapper
+- **[tools/lfs_macros.bzl](src/tools/lfs_macros.bzl)** - Convenience macros
+- **[tools/lfs_toolchain.bzl](src/tools/lfs_toolchain.bzl)** - Toolchain target definition
 - **[tools/providers.bzl](src/tools/providers.bzl)** - Toolchain provider
 - **[tools/lfs_defaults.bzl](src/tools/lfs_defaults.bzl)** - Phase presets
-- **[tools/lfs-chroot-helper.sh](src/tools/lfs-chroot-helper.sh)** - Chroot helper script
+- **[tools/podman/worker.py](src/tools/podman/worker.py)** - Rootless Podman chroot worker
 
 ### Documentation
 

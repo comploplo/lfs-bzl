@@ -84,9 +84,8 @@ lfs_toolchain = rule(
             name = "cross_toolchain",
             bin_path = "$LFS/tools/bin",
             env = {
-                "CC": "x86_64-lfs-linux-gnu-gcc",
-                "CXX": "x86_64-lfs-linux-gnu-g++",
-                "LFS_TGT": "x86_64-lfs-linux-gnu",
+                "CC": "$LFS_TGT-gcc",
+                "CXX": "$LFS_TGT-g++",
             },
         )
 

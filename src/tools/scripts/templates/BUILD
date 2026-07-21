@@ -23,12 +23,6 @@ filegroup(
     srcs = ["lfs_runner_script.sh"],
 )
 
-# Template for sysroot file staging wrapper scripts
-filegroup(
-    name = "lfs_sysroot_stage_files_wrapper_template",
-    srcs = ["lfs_sysroot_stage_files_wrapper.sh"],
-)
-
 # Template for chroot build runner scripts (displays build log)
 filegroup(
     name = "lfs_chroot_runner_script_template",

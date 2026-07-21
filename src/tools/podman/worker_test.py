@@ -17,11 +17,20 @@ class TestBazelWorker(unittest.TestCase):
         self.worker = worker.BazelWorker(external_dir='/external')
         self.worker._mounts = []
 
+    def tearDown(self):
+        # Prevent the atexit-registered cleanup_mounts from running real
+        # `umount` on the host after the mocks are torn down.
+        self.worker._mounts = []
+        self.worker._cleanup_done = True
+
     @patch('subprocess.run')
     @patch('os.makedirs')
-    def test_prepare_chroot(self, mock_makedirs, mock_run):
+    @patch('os.chmod')
+    @patch.object(worker.BazelWorker, '_prepare_merged_usr_links')
+    def test_prepare_chroot(self, mock_prepare_links, mock_chmod, mock_makedirs, mock_run):
         self.worker.prepare_chroot()
 
+        mock_prepare_links.assert_called_once()
         self.assertTrue(mock_makedirs.called)
         self.assertTrue(mock_run.called)
 
@@ -55,8 +64,8 @@ class TestBazelWorker(unittest.TestCase):
 
         self.worker._chroot_prepared = True
 
-        with patch('builtins.open', mock_open()) as mock_file:
-            with patch('pathlib.Path.touch') as mock_touch:
+        with patch('tools.podman.worker.open', mock_open(), create=True) as mock_file:
+            with patch('pathlib.Path.write_text') as mock_marker:
                 with patch('os.path.exists', return_value=True):
                     with patch('subprocess.run'):
                         req = {
@@ -73,7 +82,7 @@ class TestBazelWorker(unittest.TestCase):
                         self.assertEqual(resp['exitCode'], 0)
                         self.assertEqual(resp['requestId'], 123)
                         mock_copy.assert_called()
-                        mock_touch.assert_called()
+                        mock_marker.assert_called()
 
     @patch('subprocess.Popen')
     @patch('shutil.copy')
@@ -87,7 +96,7 @@ class TestBazelWorker(unittest.TestCase):
 
         self.worker._chroot_prepared = True
 
-        with patch('builtins.open', mock_open()):
+        with patch('tools.podman.worker.open', mock_open(), create=True):
             req = {
                 'requestId': 456,
                 'arguments': [
@@ -110,8 +119,8 @@ class TestBazelWorker(unittest.TestCase):
         mock_proc.pid = 12345
         mock_popen.return_value = mock_proc
 
-        with patch('builtins.open', mock_open()):
-            with patch('pathlib.Path.touch'):
+        with patch('tools.podman.worker.open', mock_open(), create=True):
+            with patch('pathlib.Path.write_text'):
                 req = {
                     'requestId': 789,
                     'arguments': [
@@ -143,8 +152,8 @@ class TestBazelWorker(unittest.TestCase):
 
         self.assertFalse(self.worker._chroot_prepared)
 
-        with patch('builtins.open', mock_open()):
-            with patch('pathlib.Path.touch'):
+        with patch('tools.podman.worker.open', mock_open(), create=True):
+            with patch('pathlib.Path.write_text'):
                 req = {
                     'requestId': 1,
                     'arguments': [
@@ -172,19 +181,20 @@ class TestBazelWorker(unittest.TestCase):
 
         self.assertFalse(self.worker._chroot_prepared)
 
-        with patch('builtins.open', mock_open()):
-            with patch('pathlib.Path.touch'):
+        with patch('tools.podman.worker.open', mock_open(), create=True):
+            with patch('pathlib.Path.write_text'):
                 with patch('os.path.exists', return_value=True):
-                    req = {
-                        'requestId': 1,
-                        'arguments': [
-                            '--mode', 'chroot',
-                            '--script', 'build.sh',
-                            '--done', 'done.marker',
-                            '--log', 'build.log',
-                        ]
-                    }
-                    self.worker.process_request(req)
+                    with patch.object(worker.BazelWorker, '_prepare_merged_usr_links'):
+                        req = {
+                            'requestId': 1,
+                            'arguments': [
+                                '--mode', 'chroot',
+                                '--script', 'build.sh',
+                                '--done', 'done.marker',
+                                '--log', 'build.log',
+                            ]
+                        }
+                        self.worker.process_request(req)
 
         self.assertTrue(self.worker._chroot_prepared)
         self.assertTrue(mock_makedirs.called)

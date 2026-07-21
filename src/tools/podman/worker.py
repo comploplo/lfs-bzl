@@ -15,14 +15,22 @@ import argparse
 import atexit
 import json
 import os
+import platform
 import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-DEFAULT_BUILD_TIMEOUT = 7200
+# 10h: generous ceiling so a full gcc bootstrap (ch6 gcc_pass2, ch8 gcc) plus
+# its test suite never trips it; native builds finish well under this.
+DEFAULT_BUILD_TIMEOUT = 36000
+
+
+def _default_lfs_tgt() -> str:
+    return f'{platform.machine()}-lfs-linux-gnu'
 
 
 class BazelWorker:
@@ -57,6 +65,7 @@ class BazelWorker:
 
     def __init__(self, external_dir: Optional[str] = None):
         self.external_dir = external_dir
+        self.repo_cache = self._detect_repo_cache()
         self._mounts: List[str] = []
         self._cleanup_done = False
         self._chroot_prepared = False
@@ -95,10 +104,23 @@ class BazelWorker:
                 sys.stderr.write(f"[WORKER] Warning: Failed to unmount {mount_point}: {e}\n")
             sys.stderr.flush()
 
-    def _mount_filesystem(self, source: str, target: str, options: Optional[List[str]] = None) -> None:
+    def _detect_repo_cache(self) -> Optional[str]:
+        # External repos are symlinks into Bazel's repository cache; the launcher
+        # bind-mounts that cache into the container at its real host path. Find
+        # that mount point so we can re-bind it into the chroot (chroot-phase
+        # source copies dereference those symlinks and would otherwise dangle).
+        try:
+            with open('/proc/self/mountinfo') as f:
+                for line in f:
+                    mount_point = line.split()[4]
+                    if mount_point.endswith('_bazel_repo_cache'):
+                        return mount_point
+        except OSError:
+            pass
+        return None
+
+    def _mount_filesystem(self, source: str, target: str) -> None:
         cmd = ['mount', '--rbind', source, target]
-        if options:
-            cmd.extend(options)
 
         try:
             subprocess.run(cmd, check=True)
@@ -107,9 +129,78 @@ class BazelWorker:
             sys.stderr.write(f"[WORKER] Error mounting {source} -> {target}: {e}\n")
             raise
 
+    def _replace_empty_dir_with_symlink(self, link_name: str, target: str) -> None:
+        if os.path.islink(link_name):
+            current_target = os.readlink(link_name)
+            if current_target == target:
+                return
+            os.unlink(link_name)
+        elif os.path.isdir(link_name):
+            if os.listdir(link_name):
+                raise RuntimeError(f"{link_name} is a non-empty directory")
+            os.rmdir(link_name)
+        elif os.path.exists(link_name):
+            raise RuntimeError(f"{link_name} exists and is not a symlink or directory")
+
+        os.symlink(target, link_name)
+        sys.stderr.write(f"[WORKER] Linked {link_name} -> {target}\n")
+
+    def _prepare_merged_usr_links(self) -> None:
+        # The first chroot command executes /usr/bin/env, whose interpreter is
+        # /lib/ld-linux-*.so.*.  Create the book's merged-/usr links before any
+        # chroot call so the kernel can resolve that interpreter.
+        legacy_sh = '/lfs/bin/sh'
+        if os.path.isdir('/lfs/bin') and not os.path.islink('/lfs/bin'):
+            entries = os.listdir('/lfs/bin')
+            if entries == ['sh'] and os.path.islink(legacy_sh) and os.path.exists('/lfs/usr/bin/bash'):
+                if not os.path.exists('/lfs/usr/bin/sh'):
+                    os.symlink('bash', '/lfs/usr/bin/sh')
+                os.unlink(legacy_sh)
+            elif entries:
+                raise RuntimeError('/lfs/bin is a non-empty directory')
+
+        # Relative targets: inside the chroot they resolve to /usr/*, and
+        # resolved from the macOS host they stay inside the sysroot instead
+        # of escaping to the host's /usr.
+        self._replace_empty_dir_with_symlink('/lfs/bin', 'usr/bin')
+        self._replace_empty_dir_with_symlink('/lfs/sbin', 'usr/sbin')
+        self._replace_empty_dir_with_symlink('/lfs/lib', 'usr/lib')
+
+        if platform.machine() == 'x86_64':
+            self._replace_empty_dir_with_symlink('/lfs/lib64', 'usr/lib')
+
+    _ELF_MACHINE = {'aarch64': 183, 'x86_64': 62}
+
+    def _assert_sysroot_arch(self) -> None:
+        # Tripwire: bazel's cached .done markers say nothing about WHICH
+        # sysroot they were built into. If the mounted sysroot's binaries are
+        # a different arch than this worker, fail loudly instead of chroot'ing
+        # into a foreign-arch root (Exit 127 mysteries, or worse, silently
+        # "resuming" the wrong build).
+        probe = '/lfs/usr/bin/bash'
+        want = self._ELF_MACHINE.get(platform.machine())
+        if want is None or not os.path.isfile(probe):
+            return
+        try:
+            with open(probe, 'rb') as f:
+                hdr = f.read(20)
+        except OSError:
+            return
+        if len(hdr) < 20 or hdr[:4] != b'\x7fELF':
+            return
+        e_machine = int.from_bytes(hdr[18:20], 'little')
+        if e_machine != want:
+            raise RuntimeError(
+                f'sysroot arch mismatch: {probe} has ELF e_machine={e_machine}, '
+                f'but the worker is {platform.machine()} (want {want}). '
+                'Wrong sysroot mounted or stale cross-arch cache — refusing to chroot.')
+
     def prepare_chroot(self) -> None:
         sys.stderr.write("[WORKER] Preparing chroot environment...\n")
         sys.stderr.flush()
+
+        self._assert_sysroot_arch()
+        self._prepare_merged_usr_links()
 
         for dir_path in self.MOUNT_POINTS:
             os.makedirs(dir_path, exist_ok=True)
@@ -126,10 +217,32 @@ class BazelWorker:
             self._mount_filesystem('/run', '/lfs/run')
             self._mount_filesystem('/execroot', '/lfs/execroot')
 
+            # Build on container-local disk, NOT the virtiofs-backed sysroot /tmp.
+            # gnulib's "getcwd handles long file names properly" configure test
+            # (bison, coreutils, tar, sed, texinfo, util-linux, most of ch8, ...)
+            # creates hundreds of deeply-nested dirs; doing that on virtiofs hangs
+            # the conftest forever in the kernel FUSE wait (request_wait_answer).
+            # A plain container dir bound over /lfs/tmp keeps chroot builds on the
+            # fast local overlay fs; installs still land on the real sysroot.
+            os.makedirs('/build_tmp', exist_ok=True)
+            os.chmod('/build_tmp', 0o1777)
+            self._mount_filesystem('/build_tmp', '/lfs/tmp')
+            sys.stderr.write("[WORKER] Bound /build_tmp -> /lfs/tmp (off virtiofs)\n")
+
             if self.external_dir:
                 external_mount_point = f'/lfs{self.external_dir}'
                 self._mount_filesystem(self.external_dir, external_mount_point)
                 sys.stderr.write(f"[WORKER] Mounted {self.external_dir} -> {external_mount_point}\n")
+
+            # External repos are symlinks into the repo cache; the target must be
+            # visible at the same absolute path inside the chroot or those source
+            # symlinks dangle (cp: cannot stat). The launcher mounts it into the
+            # container; re-bind it into /lfs here too.
+            if self.repo_cache and os.path.isdir(self.repo_cache):
+                repo_cache_mount_point = f'/lfs{self.repo_cache}'
+                os.makedirs(repo_cache_mount_point, exist_ok=True)
+                self._mount_filesystem(self.repo_cache, repo_cache_mount_point)
+                sys.stderr.write(f"[WORKER] Mounted {self.repo_cache} -> {repo_cache_mount_point}\n")
 
             subprocess.run(['mount', '--make-rprivate', '/lfs'], check=True)
 
@@ -145,13 +258,10 @@ class BazelWorker:
     def _create_tester_user(self) -> None:
         sys.stderr.write("[WORKER] Creating tester user for test suites\n")
         sys.stderr.flush()
-        try:
-            subprocess.run(
-                ['chroot', '/lfs', '/usr/bin/useradd', '-m', '-d', '/home/tester', 'tester'],
-                check=False
-            )
-        except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"[WORKER] Warning: Could not create tester user: {e}\n")
+        subprocess.run(
+            ['chroot', '/lfs', '/usr/bin/useradd', '-m', '-d', '/home/tester', 'tester'],
+            check=False
+        )
 
     def parse_args(self, arguments: List[str]) -> argparse.Namespace:
         parser = argparse.ArgumentParser()
@@ -206,7 +316,10 @@ class BazelWorker:
 
         if result.returncode == 0:
             sys.stderr.write(f"[WORKER] Build succeeded, creating marker {done_path}\n")
-            Path(done_path).touch()
+            # Non-empty, run-unique content: when a package actually re-runs,
+            # its dependents see a changed input and re-run too. An empty
+            # marker (byte-identical across runs) silently broke propagation.
+            Path(done_path).write_text(f"{os.path.basename(done_path)} {time.time()}\n")
         else:
             sys.stderr.write(f"[WORKER] Build failed with exit code {result.returncode}\n")
 
@@ -224,7 +337,7 @@ class BazelWorker:
             'LC_ALL': 'POSIX',
             'TERM': os.environ.get('TERM', 'linux'),
             'LFS': '/lfs',
-            'LFS_TGT': 'x86_64-lfs-linux-gnu',
+            'LFS_TGT': os.environ.get('LFS_TGT', _default_lfs_tgt()),
             'PATH': '/lfs/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
             'MAKEFLAGS': f'-j{os.cpu_count()}',
         }
@@ -267,19 +380,44 @@ class BazelWorker:
         return result
 
     def _normalize_ownership(self) -> None:
-        sys.stderr.write("[WORKER] Normalizing file ownership in /lfs...\n")
+        # Scoped: only touch files whose ownership actually drifted (test
+        # suites run as tester etc.). A blanket `chown -R` walked the whole
+        # growing tree over virtiofs after every action AND cleared the
+        # setuid/setgid bits on every binary (chown always clears them), so
+        # the final image shipped without suid passwd/su/mount. Files
+        # carrying set-bits are skipped entirely — their ownership is
+        # deliberate (e.g. dbus-daemon-launch-helper root:messagebus 4750).
+        sys.stderr.write("[WORKER] Normalizing drifted file ownership in /lfs...\n")
         try:
             for directory in self.NORMALIZE_DIRS:
                 if os.path.exists(directory):
-                    subprocess.run(['chown', '-R', 'root:root', directory], check=False)
+                    subprocess.run(
+                        ['find', directory, '-xdev',
+                         '(', '!', '-user', 'root', '-o', '!', '-group', 'root', ')',
+                         '!', '-perm', '/6000',
+                         '-exec', 'chown', '-h', 'root:root', '{}', '+'],
+                        check=False)
         except Exception as e:
             sys.stderr.write(f"[WORKER] Warning: Failed to normalize ownership: {e}\n")
 
     def process_request(self, req: Dict[str, Any]) -> Dict[str, Any]:
         request_id = req.get('requestId', 0)
 
+        if req.get('cancel'):
+            return {'requestId': request_id, 'wasCancelled': True}
+
         try:
-            args = self.parse_args(req.get('arguments', []))
+            try:
+                args = self.parse_args(req.get('arguments', []))
+            except SystemExit as e:
+                # argparse raises SystemExit on bad/missing arguments; catch it
+                # here so a malformed WorkRequest fails one build instead of
+                # killing the worker. Deliberately narrow: a SystemExit raised
+                # by the SIGTERM handler mid-build must propagate so the
+                # worker actually shuts down.
+                sys.stderr.write(f"[WORKER] Invalid work request arguments: {e}\n")
+                sys.stderr.flush()
+                return {'requestId': request_id, 'exitCode': 1, 'output': f'Invalid arguments: {e}'}
 
             sys.stderr.write(f"[WORKER] Processing request {request_id} (mode={args.mode})\n")
             sys.stderr.flush()

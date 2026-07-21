@@ -1,11 +1,17 @@
-# Pin by digest for reproducibility
-ARG DEBIAN_BASE="debian:bookworm-slim@sha256:e899040a73d36e2b36fa33216943539d9957cba8172b858097c2cabcdb20a3e2"
+# Use the multi-arch tag so --platform linux/arm64 actually gets arm64.
+# trixie (glibc 2.41), not bookworm (2.36): build-time helper tools that some
+# packages (e.g. ncurses make_hash) compile with the cross-CC link against the
+# just-built LFS glibc 2.43 and must RUN on the container's glibc. A container
+# older than the target glibc fails "GLIBC_2.38 not found". trixie >= target
+# symbol versions used by those helpers.
+ARG DEBIAN_BASE="debian:trixie-slim"
 FROM ${DEBIAN_BASE}
 
 # Minimal LFS build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash binutils bison coreutils diffutils findutils gawk gcc g++ \
     grep gzip m4 make patch perl python3 sed tar texinfo xz-utils \
+    dosfstools e2fsprogs gdisk mtools \
     wget && rm -rf /var/lib/apt/lists/*
 
 RUN ln -sf bash /bin/sh

@@ -101,21 +101,8 @@ KEYMAP=us
 FONT=Lat2-Terminus16
 EOF
 
-        # Create /etc/adjtime (PST)
-        # Note: systemd expects the clock to be in UTC by default, but we set LOCAL
-        # if dual-booting with Windows. For pure Linux, UTC is preferred.
-        # However, user requested PST configuration which usually implies
-        # setting the timezone, not necessarily the hardware clock to local.
-        # We will set the timezone to America/Los_Angeles.
-
+        # Timezone: America/Los_Angeles (hardware clock is UTC; systemd defaults to UTC when /etc/adjtime is absent)
         ln -sfv /usr/share/zoneinfo/America/Los_Angeles /etc/localtime
-
-        # Ensure /etc/adjtime exists and is set to UTC (standard for Linux)
-        cat > /etc/adjtime << "EOF"
-0.0 0 0.0
-0
-UTC
-EOF
     """,
     deps = ["//packages/chapter_08:toolchain"],
 )
@@ -134,8 +121,7 @@ lfs_script(
         cat > /etc/hosts << "EOF"
 # Begin /etc/hosts
 
-127.0.0.1 localhost.localdomain localhost
-::1       localhost ip6-localhost ip6-loopback
+::1       ip6-localhost ip6-loopback
 ff02::1   ip6-allnodes
 ff02::2   ip6-allrouters
 
@@ -154,9 +140,6 @@ DHCP=ipv4
 [DHCPv4]
 UseDomains=true
 EOF
-
-        # Symlink resolv.conf to systemd-resolved stub
-        ln -sfv /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
     """,
     deps = [":systemd_config"],
 )
@@ -209,12 +192,7 @@ lfs_script(
 # file system  mount-point  type     options             dump  fsck
 #                                                              order
 
-/dev/sda       /            ext4     defaults            1     1
-proc           /proc        proc     nosuid,noexec,nodev 0     0
-sysfs          /sys         sysfs    nosuid,noexec,nodev 0     0
-devpts         /dev/pts     devpts   gid=5,mode=620      0     0
-tmpfs          /run         tmpfs    defaults            0     0
-devtmpfs       /dev         devtmpfs mode=0755,nosuid    0     0
+LABEL=lfs-root  /            ext4     defaults            1     1
 
 # End /etc/fstab
 EOF

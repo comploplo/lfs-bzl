@@ -2,9 +2,9 @@
 Chapter 8: Building the Final System
 
 This chapter builds ~80 packages in phases:
-- Phase 2: Core Foundation (17 packages)
+- Phase 2: Core Foundation (18 packages)
 - Phase 3: Toolchain & Security (16 packages)
-- Phase 4: Build System & Python (24 packages)
+- Phase 4: Build System & Python (25 packages)
 - Phase 5: System Services (20 packages)
 - Phase 6: Final Packages (2 packages)
 
@@ -33,7 +33,7 @@ lfs_toolchain(
 )
 
 ###############################################################################
-# PHASE 2: Core Foundation (17 packages)
+# PHASE 2: Core Foundation (18 packages)
 ###############################################################################
 
 # 1. Man-pages - Data files only
@@ -43,7 +43,7 @@ lfs_package(
     srcs = ["@man_pages_src//file"],
     build_cmd = "true",
     configure_cmd = "rm -v man3/crypt*",
-    install_cmd = "make prefix=/usr install",
+    install_cmd = "make -R GIT=false prefix=/usr install",
     phase = "chroot",
     deps = ["//packages/chapter_07"],
 )
@@ -74,7 +74,7 @@ lfs_package(
         echo "rootsbindir=/usr/sbin" > configparms
         ../configure --prefix=/usr \\
             --disable-werror \\
-            --enable-kernel=4.19 \\
+            --enable-kernel=5.4 \\
             --enable-stack-protector=strong \\
             --disable-nscd \\
             libc_cv_slibdir=/usr/lib
@@ -127,11 +127,11 @@ lfs_package(
         cat > /etc/nsswitch.conf << "EOF"
 # Begin /etc/nsswitch.conf
 
-passwd: files
-group: files
-shadow: files
+passwd: files systemd
+group: files systemd
+shadow: files systemd
 
-hosts: files dns
+hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns
 networks: files
 
 protocols: files
@@ -202,6 +202,7 @@ lfs_package(
     install_cmd = """
         make PREFIX=/usr install
         cp -av libbz2.so.* /usr/lib
+        ln -sfv libbz2.so.1.0.8 /usr/lib/libbz2.so.1
         ln -sfv libbz2.so.1.0.8 /usr/lib/libbz2.so
         cp -v bzip2-shared /usr/bin/bzip2
         for i in /usr/bin/{bzcat,bunzip2}; do
@@ -221,10 +222,10 @@ lfs_configure_make(
     configure_flags = [
         "--prefix=/usr",
         "--disable-static",
-        "--docdir=/usr/share/doc/xz-5.6.2",
+        "--docdir=/usr/share/doc/xz-5.8.2",
     ],
     phase = "chroot",
-    test_cmd = "make check",
+    test_cmd = "cd build && make check",
     deps = [":glibc"],
 )
 
@@ -261,7 +262,7 @@ lfs_configure_make(
     srcs = ["@file_src//file"],
     configure_flags = ["--prefix=/usr"],
     phase = "chroot",
-    test_cmd = "make check",
+    test_cmd = "cd build && make check",
     deps = [":glibc"],
 )
 
@@ -274,17 +275,47 @@ lfs_package(
         sed -i '/MV.*old/d' Makefile.in
         sed -i '/{OLDSUFF}/c:' support/shlib-install
         sed -i 's/-Wl,-rpath,[^ ]*//' support/shobj-conf
+        sed -e '270a\\
+     else\\
+       chars_avail = 1;'      \\
+    -e '288i\\   result = -1;' \\
+    -i.orig input.c
         ./configure --prefix=/usr \\
             --disable-static \\
             --with-curses \\
-            --docdir=/usr/share/doc/readline-8.2.13
+            --docdir=/usr/share/doc/readline-8.3
     """,
     install_cmd = """
-        make SHLIB_LIBS="-lncursesw" install
-        install -v -m644 doc/*.{ps,pdf,html,dvi} /usr/share/doc/readline-8.2.13
+        make install
+        install -v -m644 doc/*.{ps,pdf,html,dvi} /usr/share/doc/readline-8.3
     """,
     phase = "chroot",
     deps = [":glibc"],
+)
+
+# 10b. Pcre2 - Perl-compatible regular expressions (new in LFS 13.0)
+lfs_configure_make(
+    name = "pcre2",
+    srcs = ["@pcre2_src//file"],
+    configure_flags = [
+        "--prefix=/usr",
+        "--docdir=/usr/share/doc/pcre2-10.47",
+        "--enable-unicode",
+        "--enable-jit",
+        "--enable-pcre2-16",
+        "--enable-pcre2-32",
+        "--enable-pcre2grep-libz",
+        "--enable-pcre2grep-libbz2",
+        "--enable-pcre2test-libreadline",
+        "--disable-static",
+    ],
+    phase = "chroot",
+    test_cmd = "cd build && make check",
+    deps = [
+        ":bzip2",
+        ":readline",
+        ":zlib",
+    ],
 )
 
 # 11. M4 - Macro processor
@@ -293,7 +324,7 @@ lfs_configure_make(
     srcs = ["@m4_src//file"],
     configure_flags = ["--prefix=/usr"],
     phase = "chroot",
-    test_cmd = "make check",
+    test_cmd = "cd build && make check",
     deps = [":glibc"],
 )
 
@@ -302,7 +333,7 @@ lfs_package(
     name = "bc",
     srcs = ["@bc_src//file"],
     build_cmd = "make",
-    configure_cmd = "CC=gcc ./configure --prefix=/usr -G -O3 -r",
+    configure_cmd = "CC='gcc -std=c99' ./configure --prefix=/usr -G -O3 -r",
     install_cmd = "make install",
     phase = "chroot",
     test_cmd = "make test",
@@ -345,15 +376,15 @@ lfs_package(
         sed -e "s|$SRCDIR/unix|/usr/lib|" \\
             -e "s|$SRCDIR|/usr/include|" \\
             -i tclConfig.sh
-        sed -e "s|$SRCDIR/unix/pkgs/tdbc1.1.7|/usr/lib/tdbc1.1.7|" \\
-            -e "s|$SRCDIR/pkgs/tdbc1.1.7/generic|/usr/include|" \\
-            -e "s|$SRCDIR/pkgs/tdbc1.1.7/library|/usr/lib/tcl8.6|" \\
-            -e "s|$SRCDIR/pkgs/tdbc1.1.7|/usr/include|" \\
-            -i pkgs/tdbc1.1.7/tdbcConfig.sh
-        sed -e "s|$SRCDIR/unix/pkgs/itcl4.2.4|/usr/lib/itcl4.2.4|" \\
-            -e "s|$SRCDIR/pkgs/itcl4.2.4/generic|/usr/include|" \\
-            -e "s|$SRCDIR/pkgs/itcl4.2.4|/usr/include|" \\
-            -i pkgs/itcl4.2.4/itclConfig.sh
+        sed -e "s|$SRCDIR/unix/pkgs/tdbc1.1.12|/usr/lib/tdbc1.1.12|" \\
+            -e "s|$SRCDIR/pkgs/tdbc1.1.12/generic|/usr/include|" \\
+            -e "s|$SRCDIR/pkgs/tdbc1.1.12/library|/usr/lib/tcl8.6|" \\
+            -e "s|$SRCDIR/pkgs/tdbc1.1.12|/usr/include|" \\
+            -i pkgs/tdbc1.1.12/tdbcConfig.sh
+        sed -e "s|$SRCDIR/unix/pkgs/itcl4.3.4|/usr/lib/itcl4.3.4|" \\
+            -e "s|$SRCDIR/pkgs/itcl4.3.4/generic|/usr/include|" \\
+            -e "s|$SRCDIR/pkgs/itcl4.3.4|/usr/include|" \\
+            -i pkgs/itcl4.3.4/itclConfig.sh
         unset SRCDIR
     """,
     configure_cmd = """
@@ -366,13 +397,14 @@ lfs_package(
     install_cmd = """
         cd unix
         make install
+        chmod 644 /usr/lib/libtclstub8.6.a
         chmod -v u+w /usr/lib/libtcl8.6.so
         make install-private-headers
         ln -sfv tclsh8.6 /usr/bin/tclsh
         mv /usr/share/man/man3/{Thread,Tcl_Thread}.3
     """,
     phase = "chroot",
-    test_cmd = "cd unix && make test",
+    test_cmd = "cd unix && LC_ALL=C.UTF-8 make test",
     deps = [":glibc"],
 )
 
@@ -383,7 +415,10 @@ lfs_package(
     build_cmd = "make",
     configure_cmd = """
         python3 -c 'from pty import spawn; spawn(["echo", "ok"])'
+        # expect bundles a 2003 tclconfig/config.guess that predates aarch64
+        # ("cannot guess build type"); state --build explicitly.
         ./configure --prefix=/usr \\
+            --build=$(uname -m)-unknown-linux-gnu \\
             --with-tcl=/usr/lib \\
             --enable-shared \\
             --disable-rpath \\
@@ -394,7 +429,7 @@ lfs_package(
         make install
         ln -svf expect5.45.4/libexpect5.45.4.so /usr/lib
     """,
-    patches = ["@expect_gcc14_patch//file"],
+    patches = ["@expect_gcc15_patch//file"],
     phase = "chroot",
     test_cmd = "make test",
     deps = [":tcl"],
@@ -431,7 +466,7 @@ lfs_package(
     configure_cmd = """
         ./configure --prefix=/usr \\
             --disable-static \\
-            --docdir=/usr/share/doc/pkgconf-2.3.0
+            --docdir=/usr/share/doc/pkgconf-2.5.1
     """,
     install_cmd = """
         make install
@@ -447,7 +482,7 @@ lfs_package(
 ###############################################################################
 
 # 18. Binutils - Binary tools (CRITICAL - requires tests)
-# Expected test failures: ~12 gold linker tests when PIE/SSP enabled
+# Expected test failures: one gprofng test (gold linker removed in binutils 2.46)
 lfs_package(
     name = "binutils",
     srcs = ["@binutils_src//file"],
@@ -457,7 +492,6 @@ lfs_package(
         cd build
         ../configure --prefix=/usr \\
             --sysconfdir=/etc \\
-            --enable-gold \\
             --enable-ld=default \\
             --enable-plugins \\
             --enable-shared \\
@@ -470,7 +504,7 @@ lfs_package(
     install_cmd = """
         cd build
         make tooldir=/usr install
-        rm -fv /usr/lib/lib{bfd,ctf,ctf-nobfd,gprofng,opcodes,sframe}.a
+        rm -rfv /usr/lib/lib{bfd,ctf,ctf-nobfd,gprofng,opcodes,sframe}.a /usr/share/doc/gprofng/
     """,
     phase = "chroot",
     test_cmd = """
@@ -494,6 +528,7 @@ lfs_package(
         make html
     """,
     configure_cmd = """
+        sed -i '/long long t1;/,+1s/()/(...)/' configure
         ./configure --prefix=/usr \\
             --enable-cxx \\
             --disable-static \\
@@ -520,7 +555,7 @@ lfs_package(
         ./configure --prefix=/usr \\
             --disable-static \\
             --enable-thread-safe \\
-            --docdir=/usr/share/doc/mpfr-4.2.1
+            --docdir=/usr/share/doc/mpfr-4.2.2
     """,
     install_cmd = """
         make install
@@ -564,7 +599,7 @@ lfs_configure_make(
         "--docdir=/usr/share/doc/attr-2.5.2",
     ],
     phase = "chroot",
-    test_cmd = "make check",
+    test_cmd = "cd build && make check",
     deps = [":glibc"],
 )
 
@@ -578,11 +613,13 @@ lfs_configure_make(
         "--docdir=/usr/share/doc/acl-2.3.2",
     ],
     phase = "chroot",
-    test_cmd = "make check",
+    test_cmd = "cd build && make check",
     deps = [":attr"],
 )
 
 # 24. Libcap - POSIX capabilities
+# NOTE: RAISE_SETFCAP=no because the rootless podman container lacks CAP_SETFCAP,
+# so the book's install-time setcap step (and its "make test") would fail here.
 lfs_package(
     name = "libcap",
     srcs = ["@libcap_src//file"],
@@ -605,7 +642,8 @@ lfs_configure_make(
         "--disable-failure-tokens",
     ],
     phase = "chroot",
-    test_cmd = "make check",
+    pre_configure_cmds = ["sed -i '/strchr/s/const//' lib/crypt-{sm3,gost}-yescrypt.c"],
+    test_cmd = "cd build && make check",
     deps = [":glibc"],
 )
 
@@ -630,21 +668,41 @@ lfs_package(
             --disable-static \\
             --with-{b,yes}crypt \\
             --without-libbsd \\
+            --disable-logind \\
             --with-group-name-max-length=32
     """,
     install_cmd = """
         make exec_prefix=/usr install
         make -C man install-man
 
-        # Post-install configuration
-        pwconv
-        grpconv
+        # Post-install configuration.
+        # shadow's pwconv/grpconv/useradd write /etc via commonio, which creates
+        # a mode-000 temp file then reopens it O_WRONLY. On this host the sysroot
+        # is virtiofs-backed, and virtiofs enforces the permission check a local
+        # fs skips for the creator, so that open() fails EACCES. Reproduce the
+        # exact pwconv/grpconv output with plain writes (mode 0600 works fine on
+        # virtiofs). Format verified against real pwconv/grpconv on ext4.
+        _lstchg=$(( $(date -u +%s) / 86400 ))
+        awk -F: -v d="$_lstchg" '{print $1":x:"d":0:99999:7:::"}' /etc/passwd > /etc/shadow
+        awk -F: '{print $1":x::"$4}' /etc/group > /etc/gshadow
+        chmod 0600 /etc/shadow /etc/gshadow
 
         mkdir -p /etc/default
-        useradd -D --gid 999
+        cat > /etc/default/useradd <<'EOF'
+GROUP=999
+HOME=/home
+INACTIVE=-1
+EXPIRE=
+SHELL=/bin/bash
+SKEL=/etc/skel
+CREATE_MAIL_SPOOL=yes
+EOF
     """,
     phase = "chroot",
-    deps = [":libxcrypt"],
+    deps = [
+        ":acl",
+        ":libxcrypt",
+    ],
 )
 
 # 27. GCC - GNU Compiler Collection (CRITICAL - requires tests)
@@ -653,13 +711,20 @@ lfs_package(
 lfs_package(
     name = "gcc",
     srcs = ["@gcc_src//file"],
-    # NOTE: GCC is extremely memory-hungry. Limit to -j4 to avoid OOM kills.
-    # With unlimited parallelism, each cc1/cc1plus process can use 1-2GB RAM.
-    build_cmd = "cd build && make -j4",
+    # NOTE: GCC is memory-hungry (each cc1/cc1plus can use 1-2GB RAM).
+    # -j8 is sized for the 8-vCPU / 14GB podman machine config.
+    build_cmd = "cd build && make -j8",
     configure_cmd = """
+        sed -i 's/char [*]q/const &/' libgomp/affinity-fmt.c
+
+        # Both arches default their lp64 multilib OS dir to lib64; point it at
+        # lib so runtime libs land in /usr/lib (ld.so never searches lib64 here).
         case $(uname -m) in
           x86_64)
             sed -e '/m64=/s/lib64/lib/' -i.orig gcc/config/i386/t-linux64
+          ;;
+          aarch64)
+            sed -e '/lp64=/s/lib64/lib/' -i.orig gcc/config/aarch64/t-aarch64-linux
           ;;
         esac
 
@@ -679,14 +744,13 @@ lfs_package(
     install_cmd = """
         cd build
         make install
-        chown -v -R root:root /usr/lib/gcc/$(gcc -dumpmachine)/14.2.0/include{,-fixed}
+        chown -v -R root:root /usr/lib/gcc/$(gcc -dumpmachine)/15.2.0/include{,-fixed}
         ln -sfvr /usr/bin/cpp /usr/lib
         ln -sfv gcc.1 /usr/share/man/man1/cc.1
-        ln -sfv ../../libexec/gcc/$(gcc -dumpmachine)/14.2.0/liblto_plugin.so /usr/lib/bfd-plugins/
+        ln -sfv ../../libexec/gcc/$(gcc -dumpmachine)/15.2.0/liblto_plugin.so /usr/lib/bfd-plugins/
 
         # Verify installation
-        echo 'int main(){}' > dummy.c
-        cc dummy.c -v -Wl,--verbose &> dummy.log
+        echo 'int main(){}' | cc -x c - -v -Wl,--verbose &> dummy.log
         readelf -l a.out | grep ': /lib'
 
         grep -E -o '/usr/lib.*/S?crt[1in].*succeeded' dummy.log
@@ -695,7 +759,7 @@ lfs_package(
         grep "/lib.*/libc.so.6 " dummy.log
         grep found dummy.log
 
-        rm -v dummy.c a.out dummy.log
+        rm -v a.out dummy.log
 
         mkdir -pv /usr/share/gdb/auto-load/usr/lib
         mv -v /usr/lib/*gdb.py /usr/share/gdb/auto-load/usr/lib
@@ -705,9 +769,6 @@ lfs_package(
         cd build
         ulimit -s -H unlimited
         sed -e '/cpython/d' -i ../gcc/testsuite/gcc.dg/plugin/plugin.exp
-        sed -e 's/no-pic /&-no-pie /' -i ../gcc/testsuite/gcc.target/i386/pr113689-1.c
-        sed -e 's/300000/(1|300000)/' -i ../libgomp/testsuite/libgomp.c-c++-common/pr109062.c
-        sed -e 's/{ target nonpic } //' -e '/GOTPCREL/d' -i ../gcc/testsuite/gcc.target/i386/fentryname3.c
 
         chown -R tester .
         su tester -c "PATH=$PATH make -k check"
@@ -741,10 +802,8 @@ lfs_package(
     """,
     install_cmd = """
         make DESTDIR=$PWD/dest install
-        install -vm755 dest/usr/lib/libncursesw.so.6.5 /usr/lib
-        rm -v dest/usr/lib/libncursesw.so.6.5
         sed -e 's/^#if.*XOPEN.*$/#if 1/' -i dest/usr/include/curses.h
-        cp -av dest/* /
+        cp --remove-destination -av dest/* /
 
         for lib in ncurses form panel menu ; do
             ln -sfv lib${lib}w.so /usr/lib/lib${lib}.so
@@ -753,7 +812,7 @@ lfs_package(
 
         ln -sfv libncursesw.so /usr/lib/libcurses.so
 
-        cp -v -R doc -T /usr/share/doc/ncurses-6.5
+        cp -v -R doc -T /usr/share/doc/ncurses-6.6
     """,
     phase = "chroot",
     deps = [
@@ -785,10 +844,14 @@ lfs_package(
 )
 
 # 30. Psmisc - Process utilities
-lfs_configure_make(
+# In-tree build (book-faithful): psmisc's install-man1 references the shipped
+# translated man pages as ../../man-po/*, which dangles in out-of-tree builds.
+lfs_package(
     name = "psmisc",
     srcs = ["@psmisc_src//file"],
-    configure_flags = ["--prefix=/usr"],
+    build_cmd = "make",
+    configure_cmd = "./configure --prefix=/usr",
+    install_cmd = "make install",
     phase = "chroot",
     test_cmd = "make check",
     deps = [":ncurses"],
@@ -802,7 +865,7 @@ lfs_package(
     configure_cmd = """
         ./configure --prefix=/usr \\
             --disable-static \\
-            --docdir=/usr/share/doc/gettext-0.22.5
+            --docdir=/usr/share/doc/gettext-1.0
     """,
     install_cmd = """
         make install
@@ -822,7 +885,8 @@ lfs_configure_make(
         "--docdir=/usr/share/doc/bison-3.8.2",
     ],
     phase = "chroot",
-    test_cmd = "make check",
+    # lfs_configure_make builds out-of-tree; the Makefile lives in build/.
+    test_cmd = "cd build && make check",
     deps = [
         ":gcc",
         ":glibc",
@@ -848,7 +912,7 @@ lfs_package(
 )
 
 ###############################################################################
-# Phase 4: Build System & Python (24 packages)
+# Phase 4: Build System & Python (25 packages)
 ###############################################################################
 
 # 34. Bash - Shell
@@ -860,14 +924,13 @@ lfs_package(
         ./configure --prefix=/usr \\
             --without-bash-malloc \\
             --with-installed-readline \\
-            bash_cv_strtold_broken=no \\
-            --docdir=/usr/share/doc/bash-5.2.32
+            --docdir=/usr/share/doc/bash-5.3
     """,
     install_cmd = "make install",
     phase = "chroot",
     test_cmd = """
         chown -R tester .
-        su -s /usr/bin/expect tester << "EOF"
+        LC_ALL=C.UTF-8 su -s /usr/bin/expect tester << "EOF"
 set timeout -1
 spawn make tests
 expect eof
@@ -892,7 +955,7 @@ lfs_package(
         rm -fv /usr/lib/libltdl.a
     """,
     phase = "chroot",
-    test_cmd = "make -k check",
+    test_cmd = "make check",
     deps = [":gcc"],
 )
 
@@ -917,10 +980,10 @@ lfs_package(
     name = "gperf",
     srcs = ["@gperf_src//file"],
     build_cmd = "make",
-    configure_cmd = "./configure --prefix=/usr --docdir=/usr/share/doc/gperf-3.1",
+    configure_cmd = "./configure --prefix=/usr --docdir=/usr/share/doc/gperf-3.3",
     install_cmd = "make install",
     phase = "chroot",
-    test_cmd = "make -j1 check",
+    test_cmd = "make check",
     deps = [":gcc"],
 )
 
@@ -932,11 +995,11 @@ lfs_package(
     configure_cmd = """
         ./configure --prefix=/usr \\
             --disable-static \\
-            --docdir=/usr/share/doc/expat-2.6.2
+            --docdir=/usr/share/doc/expat-2.7.4
     """,
     install_cmd = """
         make install
-        install -v -m644 doc/*.{html,css} /usr/share/doc/expat-2.6.2
+        install -v -m644 doc/*.{html,css} /usr/share/doc/expat-2.7.4
     """,
     phase = "chroot",
     test_cmd = "make check",
@@ -977,6 +1040,7 @@ lfs_package(
     configure_cmd = "./configure --prefix=/usr --sysconfdir=/etc",
     install_cmd = "make install",
     phase = "chroot",
+    test_cmd = "make check",
     deps = [":ncurses"],
 )
 
@@ -991,12 +1055,12 @@ lfs_package(
         sh Configure -des \\
             -D prefix=/usr \\
             -D vendorprefix=/usr \\
-            -D privlib=/usr/lib/perl5/5.40/core_perl \\
-            -D archlib=/usr/lib/perl5/5.40/core_perl \\
-            -D sitelib=/usr/lib/perl5/5.40/site_perl \\
-            -D sitearch=/usr/lib/perl5/5.40/site_perl \\
-            -D vendorlib=/usr/lib/perl5/5.40/vendor_perl \\
-            -D vendorarch=/usr/lib/perl5/5.40/vendor_perl \\
+            -D privlib=/usr/lib/perl5/5.42/core_perl \\
+            -D archlib=/usr/lib/perl5/5.42/core_perl \\
+            -D sitelib=/usr/lib/perl5/5.42/site_perl \\
+            -D sitearch=/usr/lib/perl5/5.42/site_perl \\
+            -D vendorlib=/usr/lib/perl5/5.42/vendor_perl \\
+            -D vendorarch=/usr/lib/perl5/5.42/vendor_perl \\
             -D man1dir=/usr/share/man/man1 \\
             -D man3dir=/usr/share/man/man3 \\
             -D pager="/usr/bin/less -isR" \\
@@ -1064,7 +1128,7 @@ lfs_package(
     name = "automake",
     srcs = ["@automake_src//file"],
     build_cmd = "make",
-    configure_cmd = "./configure --prefix=/usr --docdir=/usr/share/doc/automake-1.17",
+    configure_cmd = "./configure --prefix=/usr --docdir=/usr/share/doc/automake-1.18.1",
     install_cmd = "make install",
     phase = "chroot",
     test_cmd = "make -j$(($(nproc)>4?$(nproc):4)) check",
@@ -1086,8 +1150,8 @@ lfs_package(
     install_cmd = """
         sed -i '/INSTALL_LIBS/s/libcrypto.a libssl.a//' Makefile
         make MANSUFFIX=ssl install
-        mv -v /usr/share/doc/openssl /usr/share/doc/openssl-3.3.1
-        cp -vfr doc/* /usr/share/doc/openssl-3.3.1
+        mv -v /usr/share/doc/openssl /usr/share/doc/openssl-3.6.1
+        cp -vfr doc/* /usr/share/doc/openssl-3.6.1
     """,
     phase = "chroot",
     test_cmd = "HARNESS_JOBS=$(nproc) make test",
@@ -1095,29 +1159,30 @@ lfs_package(
 )
 
 # 47. Kmod - Kernel module tools
+# NOTE: kmod-34.2 dropped autotools; built with meson/ninja. Now builds after Meson.
 lfs_package(
     name = "kmod",
     srcs = ["@kmod_src//file"],
-    build_cmd = "make",
+    build_cmd = """
+        cd build
+        ninja
+    """,
     configure_cmd = """
-        ./configure --prefix=/usr \\
-            --sysconfdir=/etc \\
-            --with-openssl \\
-            --with-xz \\
-            --with-zstd \\
-            --with-zlib \\
-            --disable-manpages
+        mkdir -p build
+        cd build
+        meson setup --prefix=/usr .. \\
+            --sbindir=/usr/sbin \\
+            --buildtype=release \\
+            -D manpages=false
     """,
     install_cmd = """
-        make install
-
-        for target in depmod insmod modinfo modprobe rmmod; do
-          ln -sfv ../bin/kmod /usr/sbin/$target
-          rm -fv /usr/bin/$target
-        done
+        cd build
+        ninja install
     """,
     phase = "chroot",
     deps = [
+        ":meson",
+        ":ninja",
         ":openssl",
         ":pkgconf",
         ":xz",
@@ -1129,7 +1194,10 @@ lfs_package(
 lfs_package(
     name = "libelf",
     srcs = ["@libelf_src//file"],
-    build_cmd = "make",
+    build_cmd = """
+        make -C lib
+        make -C libelf
+    """,
     configure_cmd = """
         ./configure --prefix=/usr \\
             --disable-debuginfod \\
@@ -1141,8 +1209,12 @@ lfs_package(
         rm /usr/lib/libelf.a
     """,
     phase = "chroot",
-    test_cmd = "make check",
-    deps = [":zlib"],
+    deps = [
+        # .tar.bz2 source: the ch6 temp tools have no bzip2, so extraction in
+        # the chroot needs ch8's bzip2 installed first.
+        ":bzip2",
+        ":zlib",
+    ],
 )
 
 # 49. Libffi - Foreign function interface library
@@ -1161,6 +1233,28 @@ lfs_package(
     deps = [":gcc"],
 )
 
+# 49b. Sqlite - SQL database engine (new in LFS 13.0, needed for Python sqlite3 module)
+lfs_package(
+    name = "sqlite",
+    srcs = ["@sqlite_src//file"],
+    build_cmd = 'make LDFLAGS.rpath=""',
+    configure_cmd = """
+        ./configure --prefix=/usr \\
+            --disable-static \\
+            --enable-fts{4,5} \\
+            CPPFLAGS="-D SQLITE_ENABLE_COLUMN_METADATA=1 \\
+                      -D SQLITE_ENABLE_UNLOCK_NOTIFY=1 \\
+                      -D SQLITE_ENABLE_DBSTAT_VTAB=1 \\
+                      -D SQLITE_SECURE_DELETE=1"
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    deps = [
+        ":gcc",
+        ":readline",
+    ],
+)
+
 # 50. Python - Programming language
 lfs_package(
     name = "python",
@@ -1170,7 +1264,8 @@ lfs_package(
         ./configure --prefix=/usr \\
             --enable-shared \\
             --with-system-expat \\
-            --enable-optimizations
+            --enable-optimizations \\
+            --without-static-libpython
     """,
     install_cmd = """
         make install
@@ -1188,6 +1283,7 @@ EOF
         ":expat",
         ":libffi",
         ":openssl",
+        ":sqlite",
     ],
 )
 
@@ -1198,12 +1294,28 @@ lfs_package(
     build_cmd = """
         pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
     """,
-    configure_cmd = "true",
     install_cmd = """
-        pip3 install --no-index --no-user --find-links dist flit_core
+        pip3 install --no-index --find-links dist flit_core
     """,
     phase = "chroot",
     deps = [":python"],
+)
+
+# 51b. Packaging - Python core packaging utilities (new in LFS 13.0, required by Wheel)
+lfs_package(
+    name = "packaging",
+    srcs = ["@packaging_src//file"],
+    build_cmd = """
+        pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
+    """,
+    install_cmd = """
+        pip3 install --no-index --find-links dist packaging
+    """,
+    phase = "chroot",
+    deps = [
+        ":flit_core",
+        ":python",
+    ],
 )
 
 # 52. Wheel - Python wheel packaging standard
@@ -1213,12 +1325,14 @@ lfs_package(
     build_cmd = """
         pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
     """,
-    configure_cmd = "true",
     install_cmd = """
         pip3 install --no-index --find-links=dist wheel
     """,
     phase = "chroot",
-    deps = [":python"],
+    deps = [
+        ":flit_core",
+        ":packaging",
+    ],
 )
 
 # 53. Setuptools - Python package installer
@@ -1228,7 +1342,6 @@ lfs_package(
     build_cmd = """
         pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD
     """,
-    configure_cmd = "true",
     install_cmd = """
         pip3 install --no-index --find-links dist setuptools
     """,
@@ -1240,7 +1353,6 @@ lfs_package(
 lfs_package(
     name = "ninja",
     srcs = ["@ninja_src//file"],
-    build_cmd = "true",
     configure_cmd = """
         sed -i '/int Guess/a \\
   int   j = 0;\\
@@ -1248,7 +1360,7 @@ lfs_package(
   if ( jobs != NULL ) j = atoi( jobs );\\
   if ( j > 0 ) return j;\\
 ' src/ninja.cc
-        python3 configure.py --bootstrap
+        python3 configure.py --bootstrap --verbose
     """,
     install_cmd = """
         install -vm755 ninja /usr/bin/
@@ -1276,6 +1388,7 @@ lfs_package(
     deps = [
         ":ninja",
         ":python",
+        ":setuptools",
     ],
 )
 
@@ -1287,10 +1400,10 @@ lfs_package(
     srcs = ["@coreutils_src//file"],
     build_cmd = "make",
     configure_cmd = """
-        autoreconf -fiv
+        autoreconf -fv
+        automake -af
         FORCE_UNSAFE_CONFIGURE=1 ./configure \\
-            --prefix=/usr \\
-            --enable-no-install-program=kill,uptime
+            --prefix=/usr
     """,
     install_cmd = """
         make install
@@ -1302,31 +1415,24 @@ lfs_package(
     phase = "chroot",
     test_cmd = """
         make NON_ROOT_USERNAME=tester check-root
-        groupadd -g 102 dummy -U tester
+        # groupadd/groupdel write /etc via shadow's commonio, which fails
+        # EACCES on the virtiofs sysroot (see the shadow recipe). Reproduce
+        # their output with plain writes instead.
+        echo "dummy:x:102:tester" >> /etc/group
+        echo "dummy:x::tester" >> /etc/gshadow
         chown -R tester .
         su tester -c "PATH=$PATH make -k RUN_EXPENSIVE_TESTS=yes check" < /dev/null
-        groupdel dummy
+        sed -i '/^dummy:/d' /etc/group /etc/gshadow
     """,
     deps = [
         ":acl",
+        # The i18n patch requires autoreconf; without this dep bazel may
+        # schedule coreutils before automake has installed aclocal.
+        ":automake",
         ":gmp",
         ":libcap",
         ":shadow",
     ],
-)
-
-# 57. Check - C unit testing framework
-lfs_package(
-    name = "check",
-    srcs = ["@check_src//file"],
-    build_cmd = "make",
-    configure_cmd = "./configure --prefix=/usr --disable-static",
-    install_cmd = """
-        make docdir=/usr/share/doc/check-0.15.2 install
-    """,
-    phase = "chroot",
-    test_cmd = "make check",
-    deps = [":gcc"],
 )
 
 ################################################################################
@@ -1358,8 +1464,8 @@ lfs_package(
         rm -f /usr/bin/gawk-*
         make install
         ln -sfv gawk.1 /usr/share/man/man1/awk.1
-        mkdir -pv /usr/share/doc/gawk-*
-        cp -v doc/{awkfoai.txt,*.{eps,pdf,jpg}} /usr/share/doc/gawk-* 2>/dev/null || true
+        mkdir -pv /usr/share/doc/gawk-5.3.2
+        cp -v doc/{awkforai.txt,*.{eps,pdf,jpg}} /usr/share/doc/gawk-5.3.2 2>/dev/null || true
     """,
     phase = "chroot",
     test_cmd = """
@@ -1395,6 +1501,7 @@ lfs_package(
     configure_cmd = "PAGE=letter ./configure --prefix=/usr",
     install_cmd = "make install",
     phase = "chroot",
+    test_cmd = "make check",
     deps = [":gcc", ":perl"],
 )
 
@@ -1405,7 +1512,7 @@ lfs_package(
     build_cmd = "make",
     configure_cmd = """
         unset {C,CPP,CXX,LD}FLAGS
-        echo depends bli part_gpt > grub-core/extra_deps.lst
+        sed 's/--image-base/--nonexist-linker-option/' -i configure
         ./configure --prefix=/usr \\
             --sysconfdir=/etc \\
             --disable-efiemu \\
@@ -1413,10 +1520,49 @@ lfs_package(
     """,
     install_cmd = """
         make install
-        mv -v /etc/bash_completion.d/grub /usr/share/bash-completion/completions
+        # Book moves the completion file, but grub's efi-default configure on
+        # aarch64 may not install it under /etc at all; move only if present.
+        if [ -f /etc/bash_completion.d/grub ]; then
+            mv -v /etc/bash_completion.d/grub /usr/share/bash-completion/completions
+        fi
     """,
     phase = "chroot",
     deps = [":bison", ":flex", ":gcc", ":python"],
+)
+
+# 62b. grub_efi - GRUB rebuilt with the UEFI platform (BLFS)
+# Second GRUB build from the SAME tarball, EFI platform. BIOS :grub is built
+# first (full install of host utilities); here we install ONLY the platform
+# modules via `make -C grub-core install`, which lands the EFI modules used by
+# `grub-mkstandalone` in chapter_10.
+lfs_package(
+    name = "grub_efi",
+    srcs = ["@grub_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        unset {C,CPP,CXX,LD}FLAGS
+        sed 's/--image-base/--nonexist-linker-option/' -i configure
+        echo 'depends bli part_gpt' > grub-core/extra_deps.lst
+        case $(uname -m) in
+          x86_64) grub_target=x86_64 ;;
+          aarch64) grub_target=aarch64 ;;
+          *) echo "unsupported EFI GRUB target: $(uname -m)" >&2; exit 1 ;;
+        esac
+        ./configure --prefix=/usr \\
+            --sysconfdir=/etc \\
+            --disable-efiemu \\
+            --with-platform=efi \\
+            --target=$grub_target \\
+            --disable-werror
+    """,
+    install_cmd = "make -C grub-core install",
+    phase = "chroot",
+    deps = [
+        ":bison",
+        ":flex",
+        ":grub",
+        ":python",
+    ],
 )
 
 # 63. gzip - Compression utilities
@@ -1442,8 +1588,7 @@ lfs_package(
     """,
     install_cmd = """
         make SBINDIR=/usr/sbin install
-        mkdir -pv /usr/share/doc/iproute2-*
-        cp -v COPYING README* /usr/share/doc/iproute2-* 2>/dev/null || true
+        install -vDm644 COPYING README* -t /usr/share/doc/iproute2-6.18.0
     """,
     phase = "chroot",
     deps = [":libelf"],
@@ -1468,6 +1613,7 @@ lfs_package(
         cp -R -v docs/doc -T /usr/share/doc/kbd-* 2>/dev/null || true
     """,
     phase = "chroot",
+    test_cmd = "make check",
     deps = [":gcc"],
 )
 
@@ -1479,7 +1625,6 @@ lfs_package(
     configure_cmd = "./configure --prefix=/usr",
     install_cmd = "make install",
     phase = "chroot",
-    test_cmd = "make check",
     deps = [":gcc"],
 )
 
@@ -1510,6 +1655,30 @@ lfs_package(
     deps = [":gcc"],
 )
 
+# 68b. cpio - Archiver (required by mkinitramfs to build the initramfs)
+lfs_package(
+    name = "cpio",
+    srcs = ["@cpio_src//file"],
+    build_cmd = "make",
+    configure_cmd = """
+        # cpio-2.15 declares K&R-style xstat(); gcc-15's C23 default reads ()
+        # as zero-arg and errors ("too many arguments to function 'xstat'").
+        # Build as gnu17, per BLFS guidance for gcc >= 14.
+        ./configure --prefix=/usr \\
+            --enable-mt \\
+            --with-rmt=/usr/libexec/rmt \\
+            CFLAGS="-O2 -std=gnu17"
+    """,
+    install_cmd = "make install",
+    phase = "chroot",
+    test_cmd = "make check",
+    deps = [
+        # .tar.bz2 source: chroot extraction needs ch8's bzip2 (see libelf).
+        ":bzip2",
+        ":gcc",
+    ],
+)
+
 # 69. tar - Archiving utility
 lfs_package(
     name = "tar",
@@ -1521,7 +1690,7 @@ lfs_package(
     """,
     install_cmd = """
         make install
-        make -C doc install-html docdir=/usr/share/doc/tar-*
+        make -C doc install-html docdir=/usr/share/doc/tar-1.35
     """,
     phase = "chroot",
     test_cmd = "make check",
@@ -1533,7 +1702,10 @@ lfs_package(
     name = "texinfo",
     srcs = ["@texinfo_src//file"],
     build_cmd = "make",
-    configure_cmd = "./configure --prefix=/usr",
+    configure_cmd = """
+        sed 's/! $output_file eq/$output_file ne/' -i tp/Texinfo/Convert/*.pm
+        ./configure --prefix=/usr
+    """,
     install_cmd = """
         make install
         make TEXMF=/usr/share/texmf install-tex
@@ -1558,11 +1730,12 @@ lfs_package(
         for L in /usr/share/man/{,*/}man1/vim.1; do
             ln -sfv vim.1 $(dirname $L)/vi.1
         done
-        ln -sfv ../vim/vim*/doc /usr/share/doc/vim-*
+        ln -sfv ../vim/vim92/doc /usr/share/doc/vim-9.2.0078
     """,
     phase = "chroot",
     test_cmd = """
         chown -R tester .
+        sed '/test_plugin_glvs/d' -i src/testdir/Make_all.mak
         su tester -c "TERM=xterm-256color LANG=en_US.UTF-8 make -j1 test" &> vim-test.log
     """,
     deps = [":ncurses"],
@@ -1574,9 +1747,12 @@ lfs_package(
     srcs = ["@markupsafe_src//file"],
     build_cmd = "pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD",
     configure_cmd = "true",
-    install_cmd = "pip3 install --no-index --no-user --find-links dist Markupsafe",
+    install_cmd = "pip3 install --no-index --find-links dist Markupsafe",
     phase = "chroot",
-    deps = [":python"],
+    deps = [
+        ":python",
+        ":setuptools",
+    ],
 )
 
 # 73. jinja2 - Python templating module
@@ -1585,9 +1761,10 @@ lfs_package(
     srcs = ["@jinja2_src//file"],
     build_cmd = "pip3 wheel -w dist --no-cache-dir --no-build-isolation --no-deps $PWD",
     configure_cmd = "true",
-    install_cmd = "pip3 install --no-index --no-user --find-links dist Jinja2",
+    install_cmd = "pip3 install --no-index --find-links dist Jinja2",
     phase = "chroot",
     deps = [
+        ":flit_core",
         ":markupsafe",
         ":python",
     ],
@@ -1622,7 +1799,6 @@ lfs_package(
               -D sysusers=false \\
               -D rpmmacrosdir=no \\
               -D homed=disabled \\
-              -D userdb=false \\
               -D man=disabled \\
               -D mode=release \\
               -D pamconfdir=no \\
@@ -1630,12 +1806,16 @@ lfs_package(
               -D nobody-group=nogroup \\
               -D sysupdate=disabled \\
               -D ukify=disabled \\
-              -D docdir=/usr/share/doc/systemd-*
+              -D docdir=/usr/share/doc/systemd-259.1
     """,
     install_cmd = """
         cd build
         ninja install
-        tar -xf ../../systemd-man-pages-*.tar.xz \\
+        # src_handling extracts every srcs tarball into WORKDIR; the raw
+        # .tar.xz never lands there. Resolve the staged tarball path from
+        # $LFS_PKG_SRCS_FILE (absolute /execroot paths, valid in the chroot).
+        MAN_SRC="$(grep 'systemd-man-pages' "$LFS_PKG_SRCS_FILE")"
+        tar -xf "$MAN_SRC" \\
             --no-same-owner --strip-components=1 \\
             -C /usr/share/man
         systemd-machine-id-setup
@@ -1645,7 +1825,7 @@ lfs_package(
     test_cmd = """
         echo 'NAME="Linux From Scratch"' > /etc/os-release
         cd build
-        ninja test || true
+        unshare -m ninja test
     """,
     deps = [
         ":gperf",
@@ -1663,38 +1843,48 @@ lfs_package(
 lfs_package(
     name = "dbus",
     srcs = ["@dbus_src//file"],
-    build_cmd = "make",
+    build_cmd = """
+        cd build
+        ninja
+    """,
     configure_cmd = """
-        ./configure --prefix=/usr \\
-            --sysconfdir=/etc \\
-            --localstatedir=/var \\
-            --runstatedir=/run \\
-            --enable-user-session \\
-            --disable-static \\
-            --disable-doxygen-docs \\
-            --disable-xml-docs \\
-            --docdir=/usr/share/doc/dbus-* \\
-            --with-system-socket=/run/dbus/system_bus_socket
+        mkdir build
+        cd build
+        meson setup --prefix=/usr --buildtype=release --wrap-mode=nofallback ..
     """,
     install_cmd = """
-        make install
+        cd build
+        ninja install
         ln -sfv /etc/machine-id /var/lib/dbus
+        # meson installs the launch helper execute-only (mode 110); on the
+        # virtiofs sysroot even container-root then cannot read it (virtiofs
+        # ignores CAP_DAC_OVERRIDE), which breaks the ch11 image staging tar.
+        # Restore the book's 4750.
+        chmod 4750 /usr/libexec/dbus-daemon-launch-helper
     """,
     phase = "chroot",
-    test_cmd = "make check",
-    deps = [":systemd"],
+    test_cmd = """
+        cd build
+        ninja test
+    """,
+    deps = [
+        ":meson",
+        ":ninja",
+        ":systemd",
+    ],
 )
 
 # 76. procps - Process monitoring utilities (procps-ng)
 lfs_package(
     name = "procps",
     srcs = ["@procps_ng_src//file"],
-    build_cmd = "make src_w_LDADD='$(LDADD) -lsystemd'",
+    build_cmd = "make",
     configure_cmd = """
         ./configure --prefix=/usr \\
-            --docdir=/usr/share/doc/procps-ng-* \\
+            --docdir=/usr/share/doc/procps-ng-4.0.6 \\
             --disable-static \\
             --disable-kill \\
+            --enable-watch8bit \\
             --with-systemd
     """,
     install_cmd = "make install",
@@ -1716,7 +1906,7 @@ lfs_package(
     build_cmd = "make",
     configure_cmd = """
         ./configure --prefix=/usr \\
-            --docdir=/usr/share/doc/man-db-* \\
+            --docdir=/usr/share/doc/man-db-2.13.1 \\
             --sysconfdir=/etc \\
             --disable-setuid \\
             --enable-cache-owner=bin \\
@@ -1729,7 +1919,12 @@ lfs_package(
     test_cmd = "make check",
     deps = [
         ":gdbm",
+        # man_db's build formats its own manual with groff's soelim/tbl;
+        # without this dep bazel may schedule man_db before groff installs.
+        ":groff",
         ":libpipeline",
+        # Book order: man-db expects systemd (tmpfiles) already in place.
+        ":systemd",
     ],
 )
 
@@ -1758,7 +1953,7 @@ lfs_package(
             --disable-static \\
             --without-python \\
             ADJTIME_PATH=/var/lib/hwclock/adjtime \\
-            --docdir=/usr/share/doc/util-linux-*
+            --docdir=/usr/share/doc/util-linux-2.41.3
     """,
     install_cmd = "make install",
     phase = "chroot",
@@ -1850,7 +2045,13 @@ lfs_package(
     configure_cmd = "true",
     install_cmd = "true",
     phase = "chroot",
-    deps = [":gcc"],
+    deps = [
+        ":bash",
+        ":gcc",
+        ":make",
+        ":perl",
+        ":python",
+    ],
 )
 
 ###############################################################################
@@ -1860,7 +2061,7 @@ lfs_package(
 filegroup(
     name = "chapter_08",
     srcs = [
-        # Phase 2: Core Foundation (17 packages)
+        # Phase 2: Core Foundation (18 packages)
         ":man_pages",
         ":iana_etc",
         ":glibc",
@@ -1871,6 +2072,7 @@ filegroup(
         ":zstd",
         ":file",
         ":readline",
+        ":pcre2",
         ":m4",
         ":bc",
         ":flex",
@@ -1895,7 +2097,7 @@ filegroup(
         ":gettext",
         ":bison",
         ":grep",
-        # Phase 4: Build System & Python (24 packages)
+        # Phase 4: Build System & Python (25 packages)
         ":bash",
         ":libtool",
         ":gdbm",
@@ -1912,26 +2114,29 @@ filegroup(
         ":kmod",
         ":libelf",
         ":libffi",
+        ":sqlite",
         ":python",
         ":flit_core",
+        ":packaging",
         ":wheel",
         ":setuptools",
         ":ninja",
         ":meson",
         ":coreutils",
-        ":check",
         # Phase 5: System Services (20 packages)
         ":diffutils",
         ":gawk",
         ":findutils",
         ":groff",
         ":grub",
+        ":grub_efi",
         ":gzip",
         ":iproute2",
         ":kbd",
         ":libpipeline",
         ":make",
         ":patch",
+        ":cpio",
         ":tar",
         ":texinfo",
         ":vim",

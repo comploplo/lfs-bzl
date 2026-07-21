@@ -29,13 +29,15 @@ lfs_script(
     script = """
         # Matches docs/lfs-book/chapter07/creatingdirs.xml (System V)
 
-        # Create essential symlinks (/bin -> /usr/bin, etc.)
-        # These must exist before running configure scripts
-        ln -sfv /usr/bin /bin
-        ln -sfv /usr/sbin /sbin
-        ln -sfv /usr/lib /lib
+        # Create essential symlinks (/bin -> usr/bin, etc.)
+        # These must exist before running configure scripts. Relative targets:
+        # inside the chroot they mean /usr/*, and resolved from the macOS host
+        # they stay inside the sysroot instead of escaping to the host's /usr.
+        ln -snfv usr/bin /bin
+        ln -snfv usr/sbin /sbin
+        ln -snfv usr/lib /lib
         case $(uname -m) in
-          x86_64) ln -sfv /usr/lib /lib64 ;;
+          x86_64) ln -snfv usr/lib /lib64 ;;
         esac
 
         mkdir -pv /{boot,home,mnt,opt,srv}
@@ -63,22 +65,15 @@ lfs_script(
 lfs_script(
     name = "chroot_seed_files",
     script = """
-        # Matches docs/lfs-book/chapter07/createfiles.xml (System V)
+        # Matches docs/lfs-book/chapter07/createfiles.xml (systemd edition)
 
-        # Create shell symlinks (needed by configure scripts and build tools)
+        # Ensure /bin/sh -> bash (ch6 already created it; -sf keeps this rerun-safe).
+        # No /bin/bash symlink: with merged-/usr /bin is /usr/bin, so /bin/bash IS
+        # the real binary and `ln` would try to link it onto itself ("same file").
         ln -sfv /usr/bin/bash /bin/sh
-        ln -sfv /usr/bin/bash /bin/bash
 
-        # Create /etc/mtab symlink
-        if [ -L /etc/mtab ]; then
-          if [ "$(readlink /etc/mtab)" != "/proc/self/mounts" ]; then
-            ln -snfv /proc/self/mounts /etc/mtab
-          fi
-        elif [ -e /etc/mtab ]; then
-          ln -snfv /proc/self/mounts /etc/mtab
-        else
-          ln -sv /proc/self/mounts /etc/mtab
-        fi
+        # Create /etc/mtab symlink (-snf for rerun-safety)
+        ln -snfv /proc/self/mounts /etc/mtab
 
         # Create /etc/hosts
         cat > /etc/hosts <<EOF
@@ -92,7 +87,15 @@ root:x:0:0:root:/root:/bin/bash
 bin:x:1:1:bin:/dev/null:/usr/bin/false
 daemon:x:6:6:Daemon User:/dev/null:/usr/bin/false
 messagebus:x:18:18:D-Bus Message Daemon User:/run/dbus:/usr/bin/false
+systemd-journal-gateway:x:73:73:systemd Journal Gateway:/:/usr/bin/false
+systemd-journal-remote:x:74:74:systemd Journal Remote:/:/usr/bin/false
+systemd-journal-upload:x:75:75:systemd Journal Upload:/:/usr/bin/false
+systemd-network:x:76:76:systemd Network Management:/:/usr/bin/false
+systemd-resolve:x:77:77:systemd Resolver:/:/usr/bin/false
+systemd-timesync:x:78:78:systemd Time Synchronization:/:/usr/bin/false
+systemd-coredump:x:79:79:systemd Core Dumper:/:/usr/bin/false
 uuidd:x:80:80:UUID Generation Daemon User:/dev/null:/usr/bin/false
+systemd-oom:x:81:81:systemd Out Of Memory Daemon:/:/usr/bin/false
 nobody:x:65534:65534:Unprivileged User:/dev/null:/usr/bin/false
 EOF
 
@@ -115,17 +118,23 @@ utmp:x:13:
 cdrom:x:15:
 adm:x:16:
 messagebus:x:18:
+systemd-journal:x:23:
 input:x:24:
 mail:x:34:
 kvm:x:61:
+systemd-journal-gateway:x:73:
+systemd-journal-remote:x:74:
+systemd-journal-upload:x:75:
+systemd-network:x:76:
+systemd-resolve:x:77:
+systemd-timesync:x:78:
+systemd-coredump:x:79:
 uuidd:x:80:
+systemd-oom:x:81:
 wheel:x:97:
 users:x:999:
 nogroup:x:65534:
 EOF
-
-        # Create locale
-        localedef -i C -f UTF-8 C.UTF-8
 
         # Add tester user
         echo "tester:x:101:101::/home/tester:/bin/bash" >> /etc/passwd
@@ -177,7 +186,15 @@ lfs_toolchain(
     },
     visibility = ["//visibility:public"],
     deps = [
-        ":util_linux",  # Last package in chapter 7
+        # All six ch7 packages: util_linux alone does not dominate the
+        # chapter (bison/python/texinfo are not upstream of it), so anything
+        # gating on this target could otherwise start before ch7 is complete.
+        ":bison",
+        ":gettext",
+        ":perl",
+        ":python",
+        ":texinfo",
+        ":util_linux",
     ],
 )
 
@@ -226,12 +243,12 @@ lfs_package(
     build_cmd = "make -j$(nproc)",
     configure_cmd = """
         sh Configure -des -D prefix=/usr -D vendorprefix=/usr -D useshrplib \\
-          -Dprivlib=/usr/lib/perl5/5.40/core_perl \\
-          -Darchlib=/usr/lib/perl5/5.40/core_perl \\
-          -Dsitelib=/usr/lib/perl5/5.40/site_perl \\
-          -Dsitearch=/usr/lib/perl5/5.40/site_perl \\
-          -Dvendorlib=/usr/lib/perl5/5.40/vendor_perl \\
-          -Dvendorarch=/usr/lib/perl5/5.40/vendor_perl
+          -Dprivlib=/usr/lib/perl5/5.42/core_perl \\
+          -Darchlib=/usr/lib/perl5/5.42/core_perl \\
+          -Dsitelib=/usr/lib/perl5/5.42/site_perl \\
+          -Dsitearch=/usr/lib/perl5/5.42/site_perl \\
+          -Dvendorlib=/usr/lib/perl5/5.42/vendor_perl \\
+          -Dvendorarch=/usr/lib/perl5/5.42/vendor_perl
     """,
     install_cmd = "make install",
     phase = "chroot",
@@ -246,7 +263,7 @@ lfs_package(
     name = "python",
     srcs = ["@python_src//file"],
     build_cmd = "make -j$(nproc)",
-    configure_cmd = "./configure --prefix=/usr --enable-shared --without-ensurepip",
+    configure_cmd = "./configure --prefix=/usr --enable-shared --without-ensurepip --without-static-libpython",
     install_cmd = "make install",
     phase = "chroot",
     deps = [
@@ -290,7 +307,7 @@ lfs_package(
           --disable-liblastlog2 \\
           --without-python \\
           ADJTIME_PATH=/var/lib/hwclock/adjtime \\
-          --docdir=/usr/share/doc/util-linux-2.40.2
+          --docdir=/usr/share/doc/util-linux-2.41.3
     """,
     install_cmd = "make install",
     phase = "chroot",

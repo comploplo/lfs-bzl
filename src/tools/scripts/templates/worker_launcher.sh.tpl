@@ -5,11 +5,21 @@ set -euo pipefail
 # This script launches the Podman container with the Bazel JSON worker.
 # Template variables are substituted by Bazel genrule at build time.
 
-# Bazel runs workers with env - which clears PATH
-# Set it explicitly so we can find realpath, podman, etc.
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Bazel runs workers with a cleared env. Restore PATH so realpath, podman, etc.
+# are findable -- including /opt/homebrew/bin where podman lives on Apple Silicon
+# (harmless extra entry on Linux). Restore HOME so podman can locate its machine
+# connection config for `podman run`.
+export PATH="/opt/homebrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export HOME="${HOME:-$(cd ~ && pwd)}"
 
-IMAGE_NAME="lfs-builder:bookworm"
+IMAGE_NAME="lfs-builder:trixie"
+# Bazel clears the worker env, so an LFS_PLATFORM override can never reach
+# this script; derive the platform from the host arch instead (native build).
+case "$(uname -m)" in
+  arm64|aarch64) PLATFORM="linux/arm64" ;;
+  x86_64)        PLATFORM="linux/amd64" ;;
+  *) echo "[LAUNCHER] Unsupported host arch: $(uname -m)" >&2; exit 1 ;;
+esac
 SYSROOT_REL="{SYSROOT_REL}"
 
 # Check if container image exists
@@ -47,7 +57,7 @@ trap cleanup_container EXIT TERM INT HUP
 
 # Clean up any stale containers from previous runs that weren't properly cleaned
 # This handles cases where Bazel killed workers without proper cleanup
-stale_containers=$(podman ps -a -q --filter "name=lfs-worker-" --filter "status=created" --filter "status=exited" 2>/dev/null || true)
+stale_containers=$(podman ps -a -q --filter "name=lfs-worker-" --filter "status=exited" 2>/dev/null || true)
 if [ -n "$stale_containers" ]; then
     echo "[LAUNCHER] Cleaning up stale containers from previous runs..." >&2
     echo "$stale_containers" | xargs -r podman rm -f 2>/dev/null || true
@@ -69,6 +79,12 @@ else
     exit 1
 fi
 
+# Bazel materializes external repos as symlinks into the repository cache
+# (see .bazelrc --repository_cache). The source tarballs therefore live under
+# the repo cache, not under external/. Mount it at its real path so those
+# symlinks resolve inside the container. Keep this path in sync with .bazelrc.
+REPO_CACHE="$HOME/.cache/bazel/_bazel_repo_cache"
+
 # Verify sysroot exists
 if [ ! -d "$SYSROOT_PATH" ]; then
     echo "[LAUNCHER] Error: Sysroot not found at $SYSROOT_PATH" >&2
@@ -89,6 +105,7 @@ fi
 # Run podman as a child process (not exec) so trap handlers can fire
 # when Bazel terminates the worker
 podman run \
+  --platform "$PLATFORM" \
   --name "$CONTAINER_NAME" \
   --rm \
   --interactive \
@@ -104,6 +121,7 @@ podman run \
   --volume "${SYSROOT_PATH}:/lfs:rw" \
   --volume "${EXECROOT}:/execroot:rw" \
   --volume "${EXTERNAL_DIR}:${EXTERNAL_DIR}:rw" \
+  --volume "${REPO_CACHE}:${REPO_CACHE}:ro" \
   "$IMAGE_NAME" \
   python3 /work/worker.py --external-dir "${EXTERNAL_DIR}"
 

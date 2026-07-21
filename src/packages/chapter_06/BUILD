@@ -27,7 +27,7 @@ lfs_configure_make(
     srcs = ["@m4_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(build-aux/config.guess)",
+        "--build=$(../build-aux/config.guess)",
     ],
     phase = "ch6",
     prefix = "/usr",
@@ -45,17 +45,25 @@ lfs_package(
         # Build host tic utility first (needed for cross-compilation)
         mkdir build
         pushd build
-          ../configure AWK=gawk
+          ../configure --prefix=$LFS/tools AWK=gawk
           make -C include
           make -C progs tic
+          install progs/tic $LFS/tools/bin
         popd
 
         # Configure for cross-compilation
         #
-        # NOTE: The Chapter 5 cross-toolchain is sufficient for C builds, but it
-        # cannot reliably link ncurses' C++ bindings (it lacks a proper shared
-        # unwind/runtime). We disable the C++ bindings here; later toolchains
-        # (Chapter 7+) can enable them if desired.
+        # NOTE: The book uses --with-cxx-shared here, but the Chapter 5
+        # cross-toolchain is sufficient for C builds only; it cannot reliably
+        # link ncurses' C++ bindings (it lacks a proper shared unwind/runtime).
+        # We substitute --without-cxx-binding; later toolchains (Chapter 7+)
+        # can enable them if desired.
+        # --with-build-cc=gcc: build the run-during-build helpers (make_keys,
+        # make_hash) with the native Debian gcc, not the cross-compiler. Our
+        # build container's glibc (2.36) is OLDER than the just-built LFS glibc
+        # (2.43), so cross-CC helpers fail at runtime ("GLIBC_2.38 not found").
+        # Must be set at configure time; `make BUILD_CC=gcc` does not propagate
+        # through ncurses' recursive make. Target libs still use $LFS_TGT-gcc.
         ./configure --prefix=/usr \\
             --host=$LFS_TGT \\
             --build=$(./config.guess) \\
@@ -66,10 +74,12 @@ lfs_package(
             --without-cxx-binding \\
             --without-debug \\
             --without-ada \\
-            --disable-stripping
+            --disable-stripping \\
+            --with-build-cc=gcc \\
+            AWK=gawk
     """,
     install_cmd = """
-        make DESTDIR=$LFS TIC_PATH=$(pwd)/build/progs/tic install
+        make DESTDIR=$LFS install
         ln -sfv libncursesw.so $LFS/usr/lib/libncurses.so
         sed -e 's/^#if.*XOPEN.*$/#if 1/' -i $LFS/usr/include/curses.h
     """,
@@ -83,7 +93,8 @@ lfs_autotools(
     srcs = ["@diffutils_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(./build-aux/config.guess)",
+        "gl_cv_func_strcasecmp_works=y",
+        "--build=$(../build-aux/config.guess)",
     ],
     phase = "ch6",
     prefix = "/usr",
@@ -110,9 +121,9 @@ lfs_configure_make(
     srcs = ["@xz_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(build-aux/config.guess)",
+        "--build=$(../build-aux/config.guess)",
         "--disable-static",
-        "--docdir=/usr/share/doc/xz-5.6.2",
+        "--docdir=/usr/share/doc/xz-5.8.2",
     ],
     phase = "ch6",
     prefix = "/usr",
@@ -148,8 +159,7 @@ lfs_package(
         ./configure --prefix=/usr \\
             --build=$(sh support/config.guess) \\
             --host=$LFS_TGT \\
-            --without-bash-malloc \\
-            bash_cv_strtold_broken=no
+            --without-bash-malloc
     """,
     install_cmd = """
         make DESTDIR=$LFS install
@@ -167,7 +177,7 @@ lfs_configure_make(
     srcs = ["@grep_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(./build-aux/config.guess)",
+        "--build=$(../build-aux/config.guess)",
     ],
     phase = "ch6",
     prefix = "/usr",
@@ -181,7 +191,7 @@ lfs_configure_make(
     srcs = ["@patch_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(build-aux/config.guess)",
+        "--build=$(../build-aux/config.guess)",
     ],
     phase = "ch6",
     prefix = "/usr",
@@ -195,7 +205,7 @@ lfs_configure_make(
     srcs = ["@tar_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(build-aux/config.guess)",
+        "--build=$(../build-aux/config.guess)",
     ],
     env = {"FORCE_UNSAFE_CONFIGURE": "1"},
     phase = "ch6",
@@ -219,8 +229,7 @@ lfs_package(
             --host=$LFS_TGT \\
             --build=$(build-aux/config.guess) \\
             --enable-install-program=hostname \\
-            --enable-no-install-program=kill,uptime \\
-            gl_cv_macro_MB_CUR_MAX_good=y
+            --enable-no-install-program=kill,uptime
     """,
     install_cmd = """
         make DESTDIR=$LFS install
@@ -268,7 +277,7 @@ lfs_configure_make(
     srcs = ["@findutils_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(build-aux/config.guess)",
+        "--build=$(../build-aux/config.guess)",
         "--localstatedir=/var/lib/locate",
     ],
     phase = "ch6",
@@ -302,8 +311,7 @@ lfs_configure_make(
     srcs = ["@make_src//file"],
     configure_flags = [
         "--host=$LFS_TGT",
-        "--build=$(build-aux/config.guess)",
-        "--without-guile",
+        "--build=$(../build-aux/config.guess)",
     ],
     phase = "ch6",
     prefix = "/usr",
@@ -322,7 +330,7 @@ lfs_package(
     srcs = ["@binutils_src//file"],
     build_cmd = "( cd build && make -j$(nproc) )",
     configure_cmd = """
-        sed '6031s/$$add_dir//' -i ltmain.sh
+        sed '6031s/$add_dir//' -i ltmain.sh
         ( mkdir -v build && cd build && ../configure \\
             --prefix=/usr \\
             --build=$(../config.guess) \\
@@ -381,10 +389,16 @@ lfs_package(
           mv "$d" "$pkg"
         done
 
-        # Fix lib64 -> lib on x86_64
-        case $(uname -m) in
+        # Fix lib64 -> lib. Key on LFS_TGT (target arch) not $(uname -m): the
+        # build host may differ. Both arches default their lp64 multilib OS
+        # dir to lib64; without the sed libgcc/libstdc++ install to /usr/lib64,
+        # which ld.so never searches (merged-usr layout has no lib64 on arm).
+        case ${LFS_TGT%%-*} in
           x86_64)
             sed -e '/m64=/s/lib64/lib/' -i.orig gcc/config/i386/t-linux64
+          ;;
+          aarch64)
+            sed -e '/lp64=/s/lib64/lib/' -i.orig gcc/config/aarch64/t-aarch64-linux
           ;;
         esac
 
@@ -442,9 +456,8 @@ lfs_toolchain(
     name = "temp_tools_toolchain",
     bin_path = "$LFS/usr/bin",
     env = {
-        "CC": "x86_64-lfs-linux-gnu-gcc",
-        "CXX": "x86_64-lfs-linux-gnu-g++",
-        "LFS_TGT": "x86_64-lfs-linux-gnu",
+        "CC": "$LFS_TGT-gcc",
+        "CXX": "$LFS_TGT-g++",
         "LD_LIBRARY_PATH": "$LFS/usr/lib",
     },
     deps = [

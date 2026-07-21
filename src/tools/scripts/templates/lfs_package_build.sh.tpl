@@ -16,7 +16,7 @@ elif [[ "{mode}" == "chroot" ]]; then
 fi
 
 export LC_ALL=POSIX
-export LFS_TGT=x86_64-lfs-linux-gnu
+export LFS_TGT="${LFS_TGT:-$(uname -m)-lfs-linux-gnu}"
 # shellcheck disable=SC1083,SC1054
 {toolchain_exports}
 # shellcheck disable=SC1083,SC1054
@@ -44,6 +44,4 @@ WORKDIR="$(pwd)"
 # shellcheck disable=SC1083,SC1054
 {install_block}
 
-cd "$EXECROOT"
-touch "{marker_path}"
 echo "Successfully built {name}"

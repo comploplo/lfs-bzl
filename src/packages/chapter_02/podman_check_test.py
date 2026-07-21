@@ -8,15 +8,28 @@ via the :version_check target.
 """
 
 import re
+import shutil
 import subprocess
 import unittest
+
+# The bazel test sandbox strips PATH down past /opt/homebrew/bin (where
+# podman lives on Apple Silicon); resolve an absolute path with fallbacks.
+PODMAN = (
+    shutil.which('podman')
+    or next((p for p in ('/opt/homebrew/bin/podman', '/usr/local/bin/podman', '/usr/bin/podman')
+             if shutil.which(p)), None)
+)
 
 
 class TestPodmanAvailable(unittest.TestCase):
 
+    def setUp(self):
+        if PODMAN is None:
+            self.fail("podman not found on PATH or in standard install locations")
+
     def test_podman_installed(self):
         result = subprocess.run(
-            ['podman', '--version'],
+            [PODMAN, '--version'],
             capture_output=True, text=True, check=False,
         )
         self.assertEqual(result.returncode, 0, "podman not found")
@@ -31,15 +44,15 @@ class TestPodmanAvailable(unittest.TestCase):
 
     def test_container_image_exists(self):
         result = subprocess.run(
-            ['podman', 'image', 'exists', 'lfs-builder:bookworm'],
+            [PODMAN, 'image', 'exists', 'lfs-builder:trixie'],
             capture_output=True, text=True, check=False,
         )
         if result.returncode != 0:
             self.skipTest(
-                "Container image 'lfs-builder:bookworm' not built yet. "
+                "Container image 'lfs-builder:trixie' not built yet. "
                 "Run: bazel run //tools/podman:container_image"
             )
-        print("OK:   lfs-builder:bookworm image exists")
+        print("OK:   lfs-builder:trixie image exists")
 
 
 if __name__ == '__main__':

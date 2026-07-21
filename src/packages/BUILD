@@ -20,13 +20,3 @@ filegroup(
     srcs = ["//packages/chapter_07:chroot_cleanup"],
     visibility = ["//visibility:public"],
 )
-
-# Toolchain provider labels for quick reference.
-filegroup(
-    name = "toolchains",
-    srcs = [
-        "//packages/chapter_05:cross_toolchain",
-        "//packages/chapter_06:temp_tools_toolchain",
-        "//packages/chapter_07:chroot_base_toolchain",
-    ],
-)

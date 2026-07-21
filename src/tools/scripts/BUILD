@@ -8,13 +8,3 @@ package(default_visibility = ["//visibility:public"])
 
 # Export all scripts in the root directory
 exports_files(glob(["*.sh"]))
-
-# ----------------------------------------------------------------------------
-# Utility Scripts
-# ----------------------------------------------------------------------------
-
-# Test wrapper for lfs_package tests
-filegroup(
-    name = "test_wrapper",
-    srcs = ["test_wrapper.sh"],
-)
